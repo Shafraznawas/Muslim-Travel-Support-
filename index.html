@@ -247,7 +247,7 @@
   </div>
 
   <div class="compass-hint" id="compassHint">
-    Gold needle points to the Kaaba. <b>On ground:</b> uses phone compass. <b>At cruise:</b> switches automatically to GPS ground-track for accuracy — metal fuselage throws magnetic compasses off.
+    Gold needle points to the Kaaba. <b>N is always true north</b> — this is a fixed compass rose, not tied to your phone's magnetometer, so it stays accurate even inside a metal fuselage.
   </div>
 
   <button class="btn-primary" id="locateBtn">Get My Location &amp; Qibla</button>
@@ -283,7 +283,7 @@
     Calculation: <b>Muslim World League angles</b>, Asr per <b>Shafi'i</b> (1× shadow length). Qasr/Jama' guidance coming in the next update, pending verification. Times are calculated on-device — no internet required once your location is set.
   </div>
 
-  <footer>SR CREATION · BUILT FOR CREW, BY CREW</footer>
+  <footer>WIZTEC LABS · BUILT FOR CREW, BY CREW</footer>
 </div>
 
 <script>
@@ -394,7 +394,7 @@ function calcPrayerTimes(lat, lon, date, tzOffsetHours){
   return {
     fajr: mk(fajrH),
     sunrise: mk(sunriseH),
-    dhuhr: noon + 0.0333, // small safety margin
+    dhuhr: noon + 0.0167, // ~1 minute safety margin after solar noon (standard convention)
     asr: asrH===null ? null : noon + asrH,
     maghrib: mk(maghribH),
     isha: mk(ishaH)
@@ -431,8 +431,10 @@ function setStatus(kind, text){
 }
 
 function updateNeedle(deviceHeading, qBearing){
-  // needle rotation = qibla bearing relative to where the phone top is pointing
-  const rel = (qBearing - (deviceHeading||0) + 360) % 360;
+  // North-up dial: N is always fixed at top (true north). Needle rotates directly
+  // to the true Qibla bearing. This avoids relying on the phone's magnetometer,
+  // which is unreliable in an aircraft cabin and inconsistent across devices.
+  const rel = ((qBearing % 360) + 360) % 360;
   needlePivot.style.transform = `rotate(${rel}deg)`;
 }
 
@@ -495,19 +497,8 @@ document.getElementById('locateBtn').addEventListener('click', ()=>{
     locCoords.textContent = `${lat.toFixed(3)}°, ${lon.toFixed(3)}°`;
     locAlt.textContent = pos.coords.altitude ? `alt ${Math.round(pos.coords.altitude)}m` : 'alt --';
 
-    // Prefer GPS ground-track (coords.heading) when moving fast — immune to fuselage magnetic interference.
-    // Falls back to phone compass (deviceorientation) when stationary/slow or heading unavailable.
-    const speedKmh = (pos.coords.speed||0)*3.6;
-    if(pos.coords.heading !== null && !isNaN(pos.coords.heading) && speedKmh > 20){
-      orientationHeading = pos.coords.heading;
-      updateNeedle(orientationHeading, qBearing);
-      document.getElementById('compassHint').innerHTML =
-        `Gold needle points to the Kaaba. <b>Using GPS ground-track</b> (${Math.round(speedKmh)} km/h) — accurate at cruise, immune to fuselage interference.`;
-    } else if(orientationHeading !== null){
-      updateNeedle(orientationHeading, qBearing);
-    } else {
-      updateNeedle(0, qBearing);
-    }
+    // North-up dial — needle always shows the true Qibla bearing directly.
+    updateNeedle(0, qBearing);
 
     refreshPrayerUI(lat, lon);
   }, err=>{
@@ -515,36 +506,8 @@ document.getElementById('locateBtn').addEventListener('click', ()=>{
   }, { enableHighAccuracy:true, maximumAge:5000, timeout:20000 });
 });
 
-// ---------- Device compass (magnetometer) fallback ----------
-function handleOrientation(e){
-  let heading = null;
-  if(e.webkitCompassHeading !== undefined){
-    heading = e.webkitCompassHeading; // iOS
-  } else if(e.alpha !== null){
-    heading = 360 - e.alpha; // Android approx
-  }
-  if(heading === null) return;
-  orientationHeading = heading;
-  if(currentPos){
-    const qBearing = qiblaBearing(currentPos.latitude, currentPos.longitude);
-    const speedKmh = (currentPos.speed||0)*3.6;
-    if(!(currentPos.heading !== null && !isNaN(currentPos.heading) && speedKmh > 20)){
-      updateNeedle(orientationHeading, qBearing);
-    }
-  }
-}
-function requestOrientationPermission(){
-  if(typeof DeviceOrientationEvent !== 'undefined' && typeof DeviceOrientationEvent.requestPermission === 'function'){
-    DeviceOrientationEvent.requestPermission().then(state=>{
-      if(state === 'granted'){
-        window.addEventListener('deviceorientation', handleOrientation, true);
-      }
-    }).catch(()=>{});
-  } else {
-    window.addEventListener('deviceorientationabsolute' in window ? 'deviceorientationabsolute' : 'deviceorientation', handleOrientation, true);
-  }
-}
-document.getElementById('locateBtn').addEventListener('click', requestOrientationPermission, {once:true});
+// Note: magnetometer/device-compass code intentionally removed — the dial is
+// fixed north-up now, so needle accuracy no longer depends on the phone's sensor.
 </script>
 </body>
 </html>
