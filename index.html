@@ -254,6 +254,9 @@
 
   <div class="panel">
     <div class="panel-title">Salah Times <span id="dateLabel"></span></div>
+    <div class="location-line" style="margin-top:0; padding-top:0; border-top:none; margin-bottom:10px;">
+      <span id="tzEstimate">Estimated local time zone appears here</span>
+    </div>
     <div class="next-prayer-card">
       <div>
         <div class="next-prayer-name" id="nextPrayerName">—</div>
@@ -280,7 +283,7 @@
   </div>
 
   <div class="note">
-    Calculation: <b>Muslim World League angles</b>, Asr per <b>Shafi'i</b> (1× shadow length). Qasr/Jama' guidance coming in the next update, pending verification. Times are calculated on-device — no internet required once your location is set.
+    Calculation: <b>Muslim World League angles</b>, Asr per <b>Shafi'i</b> (1× shadow length). Qasr/Jama' guidance coming in the next update, pending verification. Everything runs on-device from GPS alone — no internet or SIM needed, even mid-flight. Clock times use an <b>estimated local zone from GPS longitude</b> (nearest half-hour), not your phone's home time zone, so they stay meaningful as you cross countries with no signal. This can be off by up to ~1 hour in a few regions where borders don't follow longitude (e.g. China, Nepal).
   </div>
 
   <footer>WIZTEC LABS · BUILT FOR CREW, BY CREW</footer>
@@ -375,12 +378,25 @@ function timeForAngle(angle, lat, decl, isAfter){
 function asrTime(lat, decl, shadowFactor){
   const latR = toRad(lat);
   const angle = -Math.atan(1/(shadowFactor + Math.tan(Math.abs(latR-decl))));
-  const cosH = (Math.sin(angle) - Math.sin(latR)*Math.sin(decl)) / (Math.cos(latR)*Math.cos(decl));
+  const cosH = (-Math.sin(angle) - Math.sin(latR)*Math.sin(decl)) / (Math.cos(latR)*Math.cos(decl));
   if(cosH < -1 || cosH > 1) return null;
   return toDeg(Math.acos(cosH))/15;
 }
-function calcPrayerTimes(lat, lon, date, tzOffsetHours){
-  const jd = julianDate(date.getFullYear(), date.getMonth()+1, date.getDate());
+function estimateTzOffset(lon){
+  // No internet mid-flight means no timezone database, so approximate the local
+  // civil offset from GPS longitude alone (nearest half-hour, since many zones
+  // like India/Iran/Afghanistan use :30/:30/:30 offsets). Will be off in places
+  // where political borders don't track longitude (e.g. China, Nepal's :45).
+  return Math.round(lon/15*2)/2;
+}
+function positionLocalDate(offsetHours){
+  // Epoch time is always correct (GPS/RTC keep ticking without signal); shift it
+  // by the position's estimated offset and read back via UTC getters so the
+  // result is independent of whatever timezone the device's OS happens to show.
+  return new Date(Date.now() + offsetHours*3600*1000);
+}
+function calcPrayerTimes(lat, lon, localDate, tzOffsetHours){
+  const jd = julianDate(localDate.getUTCFullYear(), localDate.getUTCMonth()+1, localDate.getUTCDate());
   const {decl, eqt} = sunPosition(jd - lon/(15*24));
   const noon = 12 - lon/15 - eqt + tzOffsetHours;
 
@@ -417,6 +433,7 @@ let currentPos = null;
 let watchId = null;
 let orientationHeading = null;
 let times = null;
+let currentTzOffset = null; // estimated local UTC offset, derived from GPS longitude
 
 const statusDot = document.getElementById('statusDot');
 const statusText = document.getElementById('statusText');
@@ -439,9 +456,9 @@ function updateNeedle(deviceHeading, qBearing){
 }
 
 function refreshPrayerUI(lat, lon){
-  const now = new Date();
-  const tzOffset = -now.getTimezoneOffset()/60; // local device tz; fine on ground, GPS-tz drift noted in note
-  times = calcPrayerTimes(lat, lon, now, tzOffset);
+  currentTzOffset = estimateTzOffset(lon);
+  const localDate = positionLocalDate(currentTzOffset);
+  times = calcPrayerTimes(lat, lon, localDate, currentTzOffset);
 
   const rows = document.querySelectorAll('#prayerList .prayer-row');
   const order = [['Fajr','fajr'],['Dhuhr','dhuhr'],['Asr','asr'],['Maghrib','maghrib'],['Isha','isha']];
@@ -449,14 +466,18 @@ function refreshPrayerUI(lat, lon){
     rows[i].querySelector('.prayer-time').textContent = fmtTime(times[key]);
   });
 
-  document.getElementById('dateLabel').textContent = now.toLocaleDateString(undefined,{month:'short',day:'numeric'});
+  document.getElementById('dateLabel').textContent = localDate.toLocaleDateString(undefined,{month:'short',day:'numeric', timeZone:'UTC'});
+  const sign = currentTzOffset >= 0 ? '+' : '-';
+  const abs = Math.abs(currentTzOffset);
+  const tzH = Math.floor(abs), tzM = Math.round((abs-tzH)*60);
+  document.getElementById('tzEstimate').textContent = `UTC${sign}${tzH}:${String(tzM).padStart(2,'0')} (by GPS position)`;
   updateNextPrayer();
 }
 
 function updateNextPrayer(){
-  if(!times) return;
-  const now = new Date();
-  const nowH = now.getHours() + now.getMinutes()/60 + now.getSeconds()/3600;
+  if(!times || currentTzOffset===null) return;
+  const localDate = positionLocalDate(currentTzOffset);
+  const nowH = localDate.getUTCHours() + localDate.getUTCMinutes()/60 + localDate.getUTCSeconds()/3600;
   const order = [['Fajr','fajr'],['Dhuhr','dhuhr'],['Asr','asr'],['Maghrib','maghrib'],['Isha','isha']];
   let next = null;
   for(const [label,key] of order){
