@@ -1,0 +1,550 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, maximum-scale=1.0, user-scalable=no">
+<title>Qibla Sky</title>
+<meta name="theme-color" content="#0A1628">
+<link rel="manifest" href="data:application/json;base64,eyJuYW1lIjoiUWlibGEgU2t5Iiwic2hvcnRfbmFtZSI6IlFpYmxhIFNreSIsInN0YXJ0X3VybCI6Ii4vIiwiZGlzcGxheSI6InN0YW5kYWxvbmUiLCJiYWNrZ3JvdW5kX2NvbG9yIjoiIzBBMTYyOCIsInRoZW1lX2NvbG9yIjoiIzBBMTYyOCJ9">
+<style>
+  :root{
+    --bg-deep:#0A1628;
+    --bg-mid:#0F2038;
+    --bg-panel:#132743;
+    --panel-border:#1E3A5C;
+    --accent-teal:#3ED6C4;
+    --accent-teal-dim:#2A9D8F;
+    --accent-gold:#D6B370;
+    --accent-gold-dim:#8A7047;
+    --text-primary:#EAF2F7;
+    --text-muted:#8CA3BD;
+    --text-faint:#5A7290;
+    --danger:#E08585;
+    --font-display: -apple-system, "Segoe UI Semibold", "Helvetica Neue", Arial, sans-serif;
+    --font-body: -apple-system, "Segoe UI", "Helvetica Neue", Arial, sans-serif;
+    --font-mono: ui-monospace, "SF Mono", "Cascadia Code", "Roboto Mono", Consolas, monospace;
+  }
+  *{box-sizing:border-box; -webkit-tap-highlight-color:transparent;}
+  html,body{margin:0;padding:0;}
+  body{
+    background:
+      radial-gradient(ellipse 120% 60% at 50% -10%, #16304F 0%, transparent 55%),
+      linear-gradient(180deg, var(--bg-deep) 0%, #081120 100%);
+    color:var(--text-primary);
+    font-family:var(--font-body);
+    min-height:100vh;
+    padding-bottom:40px;
+    overflow-x:hidden;
+  }
+  /* faint starfield */
+  .stars{
+    position:fixed; inset:0; pointer-events:none; z-index:0; opacity:0.5;
+    background-image:
+      radial-gradient(1px 1px at 20% 15%, #fff 0%, transparent 100%),
+      radial-gradient(1px 1px at 70% 8%, #fff 0%, transparent 100%),
+      radial-gradient(1.5px 1.5px at 85% 22%, #fff 0%, transparent 100%),
+      radial-gradient(1px 1px at 40% 30%, #fff 0%, transparent 100%),
+      radial-gradient(1px 1px at 10% 45%, #fff 0%, transparent 100%),
+      radial-gradient(1.5px 1.5px at 92% 55%, #fff 0%, transparent 100%),
+      radial-gradient(1px 1px at 55% 5%, #fff 0%, transparent 100%),
+      radial-gradient(1px 1px at 30% 60%, #fff 0%, transparent 100%);
+    background-repeat:no-repeat;
+  }
+  .wrap{position:relative; z-index:1; max-width:480px; margin:0 auto; padding:0 18px;}
+
+  header{padding:28px 0 8px; text-align:center;}
+  .wordmark{
+    font-family:var(--font-display); font-weight:700; font-size:22px;
+    letter-spacing:0.06em; text-transform:uppercase;
+    display:flex; align-items:center; justify-content:center; gap:8px;
+  }
+  .wordmark .dot{width:6px;height:6px;border-radius:50%;background:var(--accent-teal); box-shadow:0 0 8px var(--accent-teal);}
+  .tagline{color:var(--text-faint); font-size:12px; letter-spacing:0.08em; margin-top:4px; text-transform:uppercase;}
+
+  /* GPS status strip */
+  .status-strip{
+    display:flex; align-items:center; justify-content:center; gap:8px;
+    font-family:var(--font-mono); font-size:11px; color:var(--text-muted);
+    margin:14px 0 6px; padding:6px 12px; border-radius:20px;
+    background:rgba(19,39,67,0.6); border:1px solid var(--panel-border);
+    width:fit-content; margin-left:auto; margin-right:auto;
+  }
+  .status-dot{width:7px;height:7px;border-radius:50%; background:var(--text-faint);}
+  .status-dot.locked{background:var(--accent-teal); box-shadow:0 0 6px var(--accent-teal); animation:pulse 2s infinite;}
+  .status-dot.searching{background:var(--accent-gold); animation:pulse 1s infinite;}
+  @keyframes pulse{0%,100%{opacity:1;}50%{opacity:0.35;}}
+
+  /* COMPASS - signature element */
+  .compass-stage{
+    position:relative; width:280px; height:280px; margin:22px auto 8px;
+    display:flex; align-items:center; justify-content:center;
+  }
+  .ring{
+    position:absolute; border-radius:50%;
+    border:1px solid var(--panel-border);
+  }
+  .ring.r1{width:280px;height:280px;}
+  .ring.r2{width:236px;height:236px; border-style:dashed; opacity:0.5;}
+  .ring.pulse{
+    width:280px;height:280px;
+    border:1px solid var(--accent-teal);
+    opacity:0; animation:radiate 2.6s ease-out infinite;
+  }
+  @keyframes radiate{
+    0%{transform:scale(0.82); opacity:0.55;}
+    100%{transform:scale(1.08); opacity:0;}
+  }
+  .compass-face{
+    position:relative; width:224px; height:224px; border-radius:50%;
+    background:radial-gradient(circle at 50% 40%, #17304E 0%, #0C1E36 75%);
+    box-shadow: inset 0 2px 12px rgba(0,0,0,0.5), inset 0 0 0 1px rgba(255,255,255,0.03);
+    display:flex; align-items:center; justify-content:center;
+  }
+  .tick{position:absolute; background:var(--text-faint); left:50%; top:0; width:1px; height:9px; transform-origin:50% 112px;}
+  .tick.major{background:var(--text-muted); height:13px; width:1.5px;}
+  .cardinal{position:absolute; font-family:var(--font-mono); font-size:11px; color:var(--text-muted); font-weight:600;}
+  .card-n{top:14px; left:50%; transform:translateX(-50%);}
+  .card-e{right:14px; top:50%; transform:translateY(-50%);}
+  .card-s{bottom:14px; left:50%; transform:translateX(-50%);}
+  .card-w{left:14px; top:50%; transform:translateY(-50%);}
+
+  .needle-pivot{position:absolute; width:100%; height:100%; display:flex; align-items:center; justify-content:center; transition:transform 0.4s cubic-bezier(.4,1.4,.6,1);}
+  .needle{
+    position:relative; width:5px; height:82px;
+    display:flex; flex-direction:column; align-items:center;
+  }
+  .needle-tip{
+    width:0; height:0; border-left:8px solid transparent; border-right:8px solid transparent;
+    border-bottom:20px solid var(--accent-gold);
+    filter:drop-shadow(0 0 6px rgba(214,179,112,0.7));
+  }
+  .needle-shaft{flex:1; width:2px; background:linear-gradient(180deg, var(--accent-gold), var(--accent-gold-dim)); margin-top:-1px;}
+  .kaaba-mark{
+    position:absolute; top:8px; left:50%; transform:translateX(-50%);
+    width:10px; height:10px; background:var(--accent-gold); border-radius:2px;
+    box-shadow:0 0 8px rgba(214,179,112,0.8);
+  }
+  .hub{
+    position:absolute; width:14px; height:14px; border-radius:50%;
+    background:var(--bg-panel); border:2px solid var(--accent-teal);
+    box-shadow:0 0 10px rgba(62,214,196,0.5);
+  }
+  .bearing-readout{
+    position:absolute; bottom:-38px; left:50%; transform:translateX(-50%);
+    text-align:center;
+  }
+  .bearing-num{font-family:var(--font-mono); font-size:26px; font-weight:600; color:var(--accent-teal); letter-spacing:0.02em;}
+  .bearing-label{font-size:10px; color:var(--text-faint); letter-spacing:0.1em; text-transform:uppercase; margin-top:2px;}
+
+  .compass-hint{text-align:center; font-size:12px; color:var(--text-faint); margin:46px 0 24px; line-height:1.5; padding:0 20px;}
+  .compass-hint b{color:var(--text-muted);}
+
+  .btn-primary{
+    display:block; width:100%; padding:14px; border-radius:12px; border:none;
+    background:linear-gradient(135deg, var(--accent-teal), var(--accent-teal-dim));
+    color:#06231F; font-weight:700; font-size:14px; letter-spacing:0.02em;
+    font-family:var(--font-body); cursor:pointer; margin-bottom:22px;
+  }
+  .btn-primary:active{opacity:0.85;}
+
+  /* Salah panel */
+  .panel{
+    background:var(--bg-panel); border:1px solid var(--panel-border); border-radius:16px;
+    padding:16px; margin-bottom:16px;
+  }
+  .panel-title{
+    font-family:var(--font-display); font-size:12px; letter-spacing:0.12em; text-transform:uppercase;
+    color:var(--text-muted); margin:0 0 12px; display:flex; align-items:center; justify-content:space-between;
+  }
+  .next-prayer-card{
+    display:flex; align-items:center; justify-content:space-between;
+    padding:12px 14px; border-radius:10px; margin-bottom:10px;
+    background:linear-gradient(135deg, rgba(62,214,196,0.12), rgba(62,214,196,0.03));
+    border:1px solid rgba(62,214,196,0.35);
+  }
+  .next-prayer-name{font-family:var(--font-display); font-size:15px; font-weight:700; color:var(--accent-teal);}
+  .next-prayer-sub{font-size:11px; color:var(--text-faint); margin-top:2px;}
+  .countdown{font-family:var(--font-mono); font-size:20px; font-weight:600; color:var(--text-primary);}
+
+  .prayer-row{
+    display:flex; align-items:center; justify-content:space-between;
+    padding:10px 4px; border-bottom:1px solid rgba(30,58,92,0.5);
+    font-size:14px;
+  }
+  .prayer-row:last-child{border-bottom:none;}
+  .prayer-row.active .prayer-name{color:var(--accent-teal);}
+  .prayer-name{color:var(--text-primary); font-weight:500;}
+  .prayer-time{font-family:var(--font-mono); color:var(--text-muted); font-size:14px;}
+
+  .location-line{
+    display:flex; justify-content:space-between; font-family:var(--font-mono); font-size:11px;
+    color:var(--text-faint); margin-top:10px; padding-top:10px; border-top:1px solid rgba(30,58,92,0.5);
+  }
+
+  /* duas accordion */
+  .dua-item{border-bottom:1px solid rgba(30,58,92,0.5);}
+  .dua-item:last-child{border-bottom:none;}
+  .dua-head{
+    display:flex; justify-content:space-between; align-items:center;
+    padding:12px 4px; cursor:pointer; font-size:14px; color:var(--text-primary); font-weight:500;
+  }
+  .dua-chevron{color:var(--text-faint); transition:transform 0.25s;}
+  .dua-item.open .dua-chevron{transform:rotate(180deg);}
+  .dua-body{max-height:0; overflow:hidden; transition:max-height 0.3s ease;}
+  .dua-item.open .dua-body{max-height:220px;}
+  .dua-arabic{
+    font-size:20px; text-align:right; direction:rtl; color:var(--accent-gold);
+    line-height:1.8; padding:6px 4px 10px; font-family:"Traditional Arabic","Scheherazade New",serif;
+  }
+  .dua-translit{font-size:12px; color:var(--text-muted); font-style:italic; padding:0 4px 8px;}
+  .dua-meaning{font-size:12px; color:var(--text-faint); padding:0 4px 10px; line-height:1.5;}
+
+  .note{
+    font-size:11px; color:var(--text-faint); line-height:1.6; text-align:center;
+    padding:0 10px; margin:22px 0 10px;
+  }
+  .note b{color:var(--text-muted);}
+  footer{text-align:center; font-size:10px; color:var(--text-faint); letter-spacing:0.05em; margin-top:18px; opacity:0.7;}
+</style>
+</head>
+<body>
+<div class="stars"></div>
+<div class="wrap">
+
+  <header>
+    <div class="wordmark"><span class="dot"></span>Qibla Sky</div>
+    <div class="tagline">Direction &amp; Salah, wherever you're flying</div>
+  </header>
+
+  <div class="status-strip">
+    <span class="status-dot" id="statusDot"></span>
+    <span id="statusText">Tap below to get your position</span>
+  </div>
+
+  <div class="compass-stage">
+    <div class="ring pulse" id="pulseRing"></div>
+    <div class="ring r1"></div>
+    <div class="ring r2"></div>
+    <div class="compass-face" id="compassFace">
+      <div id="ticks"></div>
+      <span class="cardinal card-n">N</span>
+      <span class="cardinal card-e">E</span>
+      <span class="cardinal card-s">S</span>
+      <span class="cardinal card-w">W</span>
+      <div class="needle-pivot" id="needlePivot">
+        <div class="needle">
+          <div class="kaaba-mark"></div>
+          <div class="needle-tip"></div>
+          <div class="needle-shaft"></div>
+        </div>
+      </div>
+      <div class="hub"></div>
+    </div>
+    <div class="bearing-readout">
+      <div class="bearing-num" id="bearingNum">--°</div>
+      <div class="bearing-label">Qibla bearing</div>
+    </div>
+  </div>
+
+  <div class="compass-hint" id="compassHint">
+    Gold needle points to the Kaaba. <b>On ground:</b> uses phone compass. <b>At cruise:</b> switches automatically to GPS ground-track for accuracy — metal fuselage throws magnetic compasses off.
+  </div>
+
+  <button class="btn-primary" id="locateBtn">Get My Location &amp; Qibla</button>
+
+  <div class="panel">
+    <div class="panel-title">Salah Times <span id="dateLabel"></span></div>
+    <div class="next-prayer-card">
+      <div>
+        <div class="next-prayer-name" id="nextPrayerName">—</div>
+        <div class="next-prayer-sub" id="nextPrayerSub">Location needed</div>
+      </div>
+      <div class="countdown" id="countdown">--:--</div>
+    </div>
+    <div id="prayerList">
+      <div class="prayer-row"><span class="prayer-name">Fajr</span><span class="prayer-time">--:--</span></div>
+      <div class="prayer-row"><span class="prayer-name">Dhuhr</span><span class="prayer-time">--:--</span></div>
+      <div class="prayer-row"><span class="prayer-name">Asr</span><span class="prayer-time">--:--</span></div>
+      <div class="prayer-row"><span class="prayer-name">Maghrib</span><span class="prayer-time">--:--</span></div>
+      <div class="prayer-row"><span class="prayer-name">Isha</span><span class="prayer-time">--:--</span></div>
+    </div>
+    <div class="location-line">
+      <span id="locCoords">lat --, lon --</span>
+      <span id="locAlt">alt --</span>
+    </div>
+  </div>
+
+  <div class="panel">
+    <div class="panel-title">Travel Duas</div>
+    <div id="duaList"></div>
+  </div>
+
+  <div class="note">
+    Calculation: <b>Muslim World League angles</b>, Asr per <b>Shafi'i</b> (1× shadow length). Qasr/Jama' guidance coming in the next update, pending verification. Times are calculated on-device — no internet required once your location is set.
+  </div>
+
+  <footer>SR CREATION · BUILT FOR CREW, BY CREW</footer>
+</div>
+
+<script>
+// ---------- DATA: duas (placeholders — Shafi to verify against verified hadith before shipping) ----------
+const duas = [
+  {
+    title: "Dua for travel (setting out)",
+    arabic: "سُبْحَانَ الَّذِي سَخَّرَ لَنَا هَذَا وَمَا كُنَّا لَهُ مُقْرِنِينَ وَإِنَّا إِلَى رَبِّنَا لَمُنقَلِبُونَ",
+    translit: "Subhanal-lathi sakhkhara lana hatha wa ma kunna lahu muqrineen, wa inna ila rabbina lamunqaliboon",
+    meaning: "Glory to Him who has subjected this to us, and we could never have accomplished this by ourselves. To our Lord we shall return. (Source to be verified: Muslim, 1342)"
+  },
+  {
+    title: "Dua entering a new place / city",
+    arabic: "اللَّهُمَّ رَبَّ السَّمَاوَاتِ السَّبْعِ وَمَا أَظْلَلْنَ",
+    translit: "Allahumma rabbas-samawatis-sab'i wa ma athlalna...",
+    meaning: "O Allah, Lord of the seven heavens and all that they shade... (Full text and grading to be confirmed before shipping)"
+  },
+  {
+    title: "Dua for safety / protection",
+    arabic: "اللَّهُمَّ إِنِّي أَعُوذُ بِكَ مِنْ وَعْثَاءِ السَّفَرِ",
+    translit: "Allahumma inni a'oothu bika min wa'tha-is-safar...",
+    meaning: "O Allah, I seek refuge in You from the hardships of travel... (Source to be verified: Muslim, 1342)"
+  }
+];
+
+const duaList = document.getElementById('duaList');
+duas.forEach((d,i)=>{
+  const item = document.createElement('div');
+  item.className='dua-item';
+  item.innerHTML = `
+    <div class="dua-head" onclick="this.parentElement.classList.toggle('open')">
+      <span>${d.title}</span><span class="dua-chevron">▾</span>
+    </div>
+    <div class="dua-body">
+      <div class="dua-arabic">${d.arabic}</div>
+      <div class="dua-translit">${d.translit}</div>
+      <div class="dua-meaning">${d.meaning}</div>
+    </div>`;
+  duaList.appendChild(item);
+});
+
+// ---------- Compass ticks ----------
+const ticksEl = document.getElementById('ticks');
+for(let deg=0; deg<360; deg+=6){
+  const t = document.createElement('div');
+  t.className = 'tick' + (deg % 30 === 0 ? ' major' : '');
+  t.style.transform = `translateX(-50%) rotate(${deg}deg)`;
+  ticksEl.appendChild(t);
+}
+
+// ---------- Qibla great-circle bearing ----------
+const KAABA_LAT = 21.4225;
+const KAABA_LON = 39.8262;
+function toRad(d){return d*Math.PI/180;}
+function toDeg(r){return r*180/Math.PI;}
+function qiblaBearing(lat, lon){
+  const phi1 = toRad(lat), phi2 = toRad(KAABA_LAT);
+  const dLambda = toRad(KAABA_LON - lon);
+  const y = Math.sin(dLambda) * Math.cos(phi2);
+  const x = Math.cos(phi1)*Math.sin(phi2) - Math.sin(phi1)*Math.cos(phi2)*Math.cos(dLambda);
+  let brng = toDeg(Math.atan2(y,x));
+  return (brng + 360) % 360;
+}
+
+// ---------- Prayer times (MWL angles, Shafi'i Asr) ----------
+function julianDate(y,m,d){
+  if(m<=2){y-=1;m+=12;}
+  const A = Math.floor(y/100), B = 2-A+Math.floor(A/4);
+  return Math.floor(365.25*(y+4716)) + Math.floor(30.6001*(m+1)) + d + B - 1524.5;
+}
+function sunPosition(jd){
+  const D = jd - 2451545.0;
+  const g = toRad((357.529 + 0.98560028*D) % 360);
+  const q = (280.459 + 0.98564736*D) % 360;
+  const L = toRad((q + 1.915*Math.sin(g) + 0.020*Math.sin(2*g)) % 360);
+  const e = toRad(23.439 - 0.00000036*D);
+  const RA = toDeg(Math.atan2(Math.cos(e)*Math.sin(L), Math.cos(L))) / 15;
+  const eqt = q/15 - ((RA % 24)+24)%24;
+  const decl = Math.asin(Math.sin(e)*Math.sin(L));
+  return {decl, eqt};
+}
+function timeForAngle(angle, lat, decl, isAfter){
+  const latR = toRad(lat);
+  const cosH = (-Math.sin(toRad(angle)) - Math.sin(latR)*Math.sin(decl)) / (Math.cos(latR)*Math.cos(decl));
+  if(cosH < -1 || cosH > 1) return null; // sun doesn't reach this angle (high latitude)
+  const H = toDeg(Math.acos(cosH))/15;
+  return isAfter ? H : -H;
+}
+function asrTime(lat, decl, shadowFactor){
+  const latR = toRad(lat);
+  const angle = -Math.atan(1/(shadowFactor + Math.tan(Math.abs(latR-decl))));
+  const cosH = (Math.sin(angle) - Math.sin(latR)*Math.sin(decl)) / (Math.cos(latR)*Math.cos(decl));
+  if(cosH < -1 || cosH > 1) return null;
+  return toDeg(Math.acos(cosH))/15;
+}
+function calcPrayerTimes(lat, lon, date, tzOffsetHours){
+  const jd = julianDate(date.getFullYear(), date.getMonth()+1, date.getDate());
+  const {decl, eqt} = sunPosition(jd - lon/(15*24));
+  const noon = 12 - lon/15 - eqt + tzOffsetHours;
+
+  const fajrH = timeForAngle(18, lat, decl, false);
+  const sunriseH = timeForAngle(0.833, lat, decl, false);
+  const asrH = asrTime(lat, decl, 1); // Shafi'i: 1x shadow
+  const maghribH = timeForAngle(0.833, lat, decl, true);
+  const ishaH = timeForAngle(17, lat, decl, true);
+
+  const mk = h => h===null ? null : noon + h;
+  return {
+    fajr: mk(fajrH),
+    sunrise: mk(sunriseH),
+    dhuhr: noon + 0.0333, // small safety margin
+    asr: asrH===null ? null : noon + asrH,
+    maghrib: mk(maghribH),
+    isha: mk(ishaH)
+  };
+}
+function fmtTime(hoursFloat){
+  if(hoursFloat===null || isNaN(hoursFloat)) return '--:--';
+  let h = ((hoursFloat % 24)+24)%24;
+  const hh = Math.floor(h);
+  const mm = Math.round((h-hh)*60);
+  const mm2 = mm===60 ? 0 : mm;
+  const hh2 = mm===60 ? hh+1 : hh;
+  const period = hh2 >= 12 ? 'PM' : 'AM';
+  let h12 = hh2 % 12; if(h12===0) h12=12;
+  return `${h12}:${String(mm2).padStart(2,'0')} ${period}`;
+}
+
+// ---------- State ----------
+let currentPos = null;
+let watchId = null;
+let orientationHeading = null;
+let times = null;
+
+const statusDot = document.getElementById('statusDot');
+const statusText = document.getElementById('statusText');
+const needlePivot = document.getElementById('needlePivot');
+const bearingNum = document.getElementById('bearingNum');
+const locCoords = document.getElementById('locCoords');
+const locAlt = document.getElementById('locAlt');
+
+function setStatus(kind, text){
+  statusDot.className = 'status-dot ' + kind;
+  statusText.textContent = text;
+}
+
+function updateNeedle(deviceHeading, qBearing){
+  // needle rotation = qibla bearing relative to where the phone top is pointing
+  const rel = (qBearing - (deviceHeading||0) + 360) % 360;
+  needlePivot.style.transform = `rotate(${rel}deg)`;
+}
+
+function refreshPrayerUI(lat, lon){
+  const now = new Date();
+  const tzOffset = -now.getTimezoneOffset()/60; // local device tz; fine on ground, GPS-tz drift noted in note
+  times = calcPrayerTimes(lat, lon, now, tzOffset);
+
+  const rows = document.querySelectorAll('#prayerList .prayer-row');
+  const order = [['Fajr','fajr'],['Dhuhr','dhuhr'],['Asr','asr'],['Maghrib','maghrib'],['Isha','isha']];
+  order.forEach(([label,key],i)=>{
+    rows[i].querySelector('.prayer-time').textContent = fmtTime(times[key]);
+  });
+
+  document.getElementById('dateLabel').textContent = now.toLocaleDateString(undefined,{month:'short',day:'numeric'});
+  updateNextPrayer();
+}
+
+function updateNextPrayer(){
+  if(!times) return;
+  const now = new Date();
+  const nowH = now.getHours() + now.getMinutes()/60 + now.getSeconds()/3600;
+  const order = [['Fajr','fajr'],['Dhuhr','dhuhr'],['Asr','asr'],['Maghrib','maghrib'],['Isha','isha']];
+  let next = null;
+  for(const [label,key] of order){
+    if(times[key]!==null && times[key] > nowH){ next = {label, h: times[key]}; break; }
+  }
+  if(!next){ next = {label:'Fajr', h: times.fajr + 24}; } // tomorrow's fajr (approx)
+
+  document.getElementById('nextPrayerName').textContent = next.label;
+  document.getElementById('nextPrayerSub').textContent = 'at ' + fmtTime(next.h % 24);
+
+  const diff = next.h - nowH;
+  const dh = Math.floor(diff);
+  const dm = Math.floor((diff-dh)*60);
+  document.getElementById('countdown').textContent = `${String(dh).padStart(2,'0')}:${String(dm).padStart(2,'0')}`;
+
+  document.querySelectorAll('#prayerList .prayer-row').forEach(r=>r.classList.remove('active'));
+  const idx = order.findIndex(o=>o[0]===next.label);
+  if(idx>=0) document.querySelectorAll('#prayerList .prayer-row')[idx].classList.add('active');
+}
+setInterval(updateNextPrayer, 1000);
+
+// ---------- Geolocation ----------
+document.getElementById('locateBtn').addEventListener('click', ()=>{
+  if(!navigator.geolocation){
+    setStatus('searching','GPS not supported on this device');
+    return;
+  }
+  setStatus('searching','Searching for GPS lock…');
+
+  if(watchId) navigator.geolocation.clearWatch(watchId);
+  watchId = navigator.geolocation.watchPosition(pos=>{
+    currentPos = pos.coords;
+    setStatus('locked', `GPS locked · ±${Math.round(pos.coords.accuracy)}m`);
+
+    const lat = pos.coords.latitude, lon = pos.coords.longitude;
+    const qBearing = qiblaBearing(lat, lon);
+    bearingNum.textContent = Math.round(qBearing) + '°';
+    locCoords.textContent = `${lat.toFixed(3)}°, ${lon.toFixed(3)}°`;
+    locAlt.textContent = pos.coords.altitude ? `alt ${Math.round(pos.coords.altitude)}m` : 'alt --';
+
+    // Prefer GPS ground-track (coords.heading) when moving fast — immune to fuselage magnetic interference.
+    // Falls back to phone compass (deviceorientation) when stationary/slow or heading unavailable.
+    const speedKmh = (pos.coords.speed||0)*3.6;
+    if(pos.coords.heading !== null && !isNaN(pos.coords.heading) && speedKmh > 20){
+      orientationHeading = pos.coords.heading;
+      updateNeedle(orientationHeading, qBearing);
+      document.getElementById('compassHint').innerHTML =
+        `Gold needle points to the Kaaba. <b>Using GPS ground-track</b> (${Math.round(speedKmh)} km/h) — accurate at cruise, immune to fuselage interference.`;
+    } else if(orientationHeading !== null){
+      updateNeedle(orientationHeading, qBearing);
+    } else {
+      updateNeedle(0, qBearing);
+    }
+
+    refreshPrayerUI(lat, lon);
+  }, err=>{
+    setStatus('searching', 'Location unavailable — check permissions');
+  }, { enableHighAccuracy:true, maximumAge:5000, timeout:20000 });
+});
+
+// ---------- Device compass (magnetometer) fallback ----------
+function handleOrientation(e){
+  let heading = null;
+  if(e.webkitCompassHeading !== undefined){
+    heading = e.webkitCompassHeading; // iOS
+  } else if(e.alpha !== null){
+    heading = 360 - e.alpha; // Android approx
+  }
+  if(heading === null) return;
+  orientationHeading = heading;
+  if(currentPos){
+    const qBearing = qiblaBearing(currentPos.latitude, currentPos.longitude);
+    const speedKmh = (currentPos.speed||0)*3.6;
+    if(!(currentPos.heading !== null && !isNaN(currentPos.heading) && speedKmh > 20)){
+      updateNeedle(orientationHeading, qBearing);
+    }
+  }
+}
+function requestOrientationPermission(){
+  if(typeof DeviceOrientationEvent !== 'undefined' && typeof DeviceOrientationEvent.requestPermission === 'function'){
+    DeviceOrientationEvent.requestPermission().then(state=>{
+      if(state === 'granted'){
+        window.addEventListener('deviceorientation', handleOrientation, true);
+      }
+    }).catch(()=>{});
+  } else {
+    window.addEventListener('deviceorientationabsolute' in window ? 'deviceorientationabsolute' : 'deviceorientation', handleOrientation, true);
+  }
+}
+document.getElementById('locateBtn').addEventListener('click', requestOrientationPermission, {once:true});
+</script>
+</body>
+</html>
