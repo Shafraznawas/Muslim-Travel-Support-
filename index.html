@@ -233,9 +233,9 @@
     padding:9px 2px 2px; border-top:1px solid var(--panel-border); margin-top:2px;
   }
   .calc-summary b{color:var(--accent-teal-dim);}
-  .nearby-btns{display:flex; gap:10px; margin-bottom:4px;}
+  .nearby-btns{display:flex; flex-wrap:wrap; gap:10px; margin-bottom:4px;}
   .btn-secondary{
-    flex:1; padding:12px 8px; border-radius:10px; border:1px solid var(--panel-border);
+    flex:1 1 28%; min-width:96px; padding:12px 8px; border-radius:10px; border:1px solid var(--panel-border);
     background:var(--bg-deep); color:var(--text-primary); font-weight:600; font-size:12.5px;
     font-family:var(--font-body); cursor:pointer; text-align:center;
   }
@@ -322,13 +322,22 @@
         <option value="hanafi">Ḥanafī (2× shadow)</option>
       </select>
     </div>
+    <div class="calc-row">
+      <label for="travelSel">I'm traveling</label>
+      <select id="travelSel">
+        <option value="0">Off</option>
+        <option value="1">On — shorten &amp; combine</option>
+      </select>
+    </div>
     <div class="calc-summary" id="calcSummary"></div>
+    <div class="calc-summary" id="travelGuidance" style="display:none;"></div>
   </div>
 
   <div class="panel">
     <div class="panel-title">Salah Times <span id="dateLabel"></span></div>
     <div class="location-line" style="margin-top:0; padding-top:0; border-top:none; margin-bottom:10px;">
       <span id="tzEstimate">Estimated local time zone appears here</span>
+      <span id="hijriLabel"></span>
     </div>
     <div class="next-prayer-card">
       <div>
@@ -356,9 +365,15 @@
     <div class="nearby-btns">
       <button class="btn-secondary" id="findMosqueBtn">🕌 Closest Masjid</button>
       <button class="btn-secondary" id="findHalalBtn">🍽 Closest Halal Food</button>
+      <button class="btn-secondary" id="findPrayerRoomBtn">🛐 Prayer Room</button>
     </div>
     <div class="nearby-status" id="nearbyStatus">Needs internet. Uses your current location.</div>
     <div id="nearbyList"></div>
+  </div>
+
+  <div class="panel">
+    <div class="panel-title">Tayammum (Dry Ablution)</div>
+    <div id="tayammumList"></div>
   </div>
 
   <div class="panel">
@@ -367,7 +382,7 @@
   </div>
 
   <div class="note">
-    Prayer times use the <b>calculation method you pick above</b> (angles per that authority), with Asr by your selected madhab. Qasr/Jama' guidance coming in the next update, pending verification. Everything runs on-device from GPS alone — no internet or SIM needed, even mid-flight. Clock times use an <b>estimated local zone from GPS longitude</b> (nearest half-hour), not your phone's home time zone, so they stay meaningful as you cross countries with no signal. This can be off by up to ~1 hour in a few regions where borders don't follow longitude (e.g. China, Nepal). In-flight direction uses the <b>GPS ground track</b> (true north); in a crosswind the aircraft's nose can differ from the track by a few degrees (crab angle), so treat the needle as accurate to roughly ±5–10° while flying. On the ground when stationary, the <b>phone's compass</b> takes over — its magnetic reading is corrected to <b>true north</b> using an on-device World Magnetic Model, so the remaining error is mainly local magnetic interference (nearby metal, speakers, magnets), not declination.
+    Prayer times use the <b>calculation method you pick above</b> (angles per that authority), with Asr by your selected madhab. Everything runs on-device from GPS alone — no internet or SIM needed, even mid-flight. Clock times use an <b>estimated local zone from GPS longitude</b> (nearest half-hour), not your phone's home time zone, so they stay meaningful as you cross countries with no signal. This can be off by up to ~1 hour in a few regions where borders don't follow longitude (e.g. China, Nepal). In-flight direction uses the <b>GPS ground track</b> (true north); in a crosswind the aircraft's nose can differ from the track by a few degrees (crab angle), so treat the needle as accurate to roughly ±5–10° while flying. On the ground when stationary, the <b>phone's compass</b> takes over — its magnetic reading is corrected to <b>true north</b> using an on-device World Magnetic Model, so the remaining error is mainly local magnetic interference (nearby metal, speakers, magnets), not declination. The <b>Hijri date</b> shown above uses an on-device calendar calculation, not local moon-sighting, so it can be off by a day or two from an official announcement — treat it as a guide, not an authority.
   </div>
 
   <footer>WIZTEC LABS · BUILT FOR CREW, BY CREW</footer>
@@ -396,21 +411,37 @@ const duas = [
   }
 ];
 
-const duaList = document.getElementById('duaList');
-duas.forEach((d,i)=>{
-  const item = document.createElement('div');
-  item.className='dua-item';
-  item.innerHTML = `
-    <div class="dua-head" onclick="this.parentElement.classList.toggle('open')">
-      <span>${d.title}</span><span class="dua-chevron">▾</span>
-    </div>
-    <div class="dua-body">
-      <div class="dua-arabic">${d.arabic}</div>
-      <div class="dua-translit">${d.translit}</div>
-      <div class="dua-meaning">${d.meaning}</div>
-    </div>`;
-  duaList.appendChild(item);
-});
+// Shared accordion renderer — used for Travel Duas and the Tayammum guide.
+function renderAccordion(container, items){
+  items.forEach(d=>{
+    const item = document.createElement('div');
+    item.className='dua-item';
+    item.innerHTML = `
+      <div class="dua-head" onclick="this.parentElement.classList.toggle('open')">
+        <span>${d.title}</span><span class="dua-chevron">▾</span>
+      </div>
+      <div class="dua-body">
+        ${d.arabic ? `<div class="dua-arabic">${d.arabic}</div>` : ''}
+        ${d.translit ? `<div class="dua-translit">${d.translit}</div>` : ''}
+        <div class="dua-meaning">${d.meaning}</div>
+      </div>`;
+    container.appendChild(item);
+  });
+}
+renderAccordion(document.getElementById('duaList'), duas);
+
+// ---------- DATA: Tayammum (dry ablution) guide (placeholder — pending verification, same as duas above) ----------
+const tayammumItems = [
+  {
+    title: "When Tayammum is allowed",
+    meaning: "When no water is available, or using water would cause harm or real difficulty — for example, mid-flight with no water access, or illness. It stands in for wudu (and ghusl) until water is available again. (Pending verification)"
+  },
+  {
+    title: "How to perform Tayammum",
+    meaning: "1. Make the intention (niyyah). 2. Strike both palms once on a clean surface (seat tray, wall, clean sand/earth). 3. Wipe the face with both palms. 4. Wipe the hands and forearms up to the wrists (or elbows, per your madhab). (Pending verification)"
+  }
+];
+renderAccordion(document.getElementById('tayammumList'), tayammumItems);
 
 // ---------- Compass ticks ----------
 const ticksEl = document.getElementById('ticks');
@@ -554,6 +585,7 @@ function lsGet(k,d){ try{ return localStorage.getItem(k) || d; }catch(e){ return
 function lsSet(k,v){ try{ localStorage.setItem(k,v); }catch(e){} }
 let calcMethodKey = lsGet('qs_calcMethod','MWL');
 let asrMadhabKey  = lsGet('qs_asrMadhab','shafii');
+let travelMode    = lsGet('qs_travelMode','0') === '1';
 if(!CALC_METHODS[calcMethodKey]) calcMethodKey = 'MWL';
 
 function calcPrayerTimes(lat, lon, localDate, tzOffsetHours){
@@ -601,11 +633,34 @@ function fmtTime(hoursFloat){
   return `${h12}:${String(mm2).padStart(2,'0')} ${period}`;
 }
 
+// ---------- Hijri calendar (tabular/arithmetic conversion) ----------
+// Deterministic, on-device, no internet — same offline-first approach as the
+// WMM magnetic declination model above. This is the standard tabular Islamic
+// calendar, not local moon-sighting, so it can be off by ~1-2 days from an
+// official/local announcement — treat it as a reference, not an authority.
+const HIJRI_MONTHS = ['Muharram','Safar',"Rabi' al-Awwal","Rabi' al-Thani","Jumada al-Awwal","Jumada al-Thani","Rajab","Sha'ban","Ramadan","Shawwal","Dhu al-Qi'dah","Dhu al-Hijjah"];
+function hijriFromJDN(jdn){
+  const l0 = jdn - 1948440 + 10632;
+  const n = Math.floor((l0 - 1) / 10631);
+  let l = l0 - 10631*n + 354;
+  const j = Math.floor((10985-l)/5316)*Math.floor((50*l)/17719) + Math.floor(l/5670)*Math.floor((43*l)/15238);
+  l = l - Math.floor((30-j)/15)*Math.floor((17719*j)/50) - Math.floor(j/16)*Math.floor((15238*j)/43) + 29;
+  const month = Math.floor((24*l)/709);
+  const day = l - Math.floor((709*month)/24);
+  const year = 30*n + j - 30;
+  return {year, month, day};
+}
+function hijriFromGregorian(y,m,d){
+  const jdn = Math.floor(julianDate(y,m,d) + 0.5); // julianDate() already used for solar/prayer-time math above
+  return hijriFromJDN(jdn);
+}
+
 // ---------- State ----------
 let currentPos = null;
 let watchId = null;
 let times = null;
 let currentTzOffset = null; // estimated local UTC offset, derived from GPS longitude
+let isRamadan = false; // set from the Hijri month in refreshPrayerUI
 
 // Direction sources, best available wins:
 //   'track'   — GPS ground track while moving (true north, satellite-only; in-flight mode)
@@ -763,7 +818,20 @@ function refreshPrayerUI(lat, lon){
   const tzH = Math.floor(abs), tzM = Math.round((abs-tzH)*60);
   const tzSrc = trackActive ? 'estimated from GPS position (in-flight)' : "your phone's clock";
   document.getElementById('tzEstimate').textContent = `UTC${sign}${tzH}:${String(tzM).padStart(2,'0')} (${tzSrc})`;
+
+  const hijri = hijriFromGregorian(localDate.getUTCFullYear(), localDate.getUTCMonth()+1, localDate.getUTCDate());
+  isRamadan = hijri.month === 9;
+  document.getElementById('hijriLabel').textContent = `${hijri.day} ${HIJRI_MONTHS[hijri.month-1]} ${hijri.year} AH (approx.)`;
+  updateRamadanLabels(isRamadan);
+
   updateNextPrayer();
+}
+
+// Relabels only (Fajr/Maghrib row names) — the underlying data-key stays
+// 'fajr'/'maghrib' so updateNextPrayer()'s row lookup keeps working unchanged.
+function updateRamadanLabels(on){
+  document.querySelector('#prayerList .prayer-row[data-key="fajr"] .prayer-name').textContent = on ? 'Fajr (Suhoor ends)' : 'Fajr';
+  document.querySelector('#prayerList .prayer-row[data-key="maghrib"] .prayer-name').textContent = on ? 'Maghrib (Iftar)' : 'Maghrib';
 }
 
 function updateNextPrayer(){
@@ -797,7 +865,15 @@ function updateNextPrayer(){
     next = {label:'Fajr', h: times.fajr + 24}; // tomorrow's fajr (approx)
   }
 
-  document.getElementById('nextPrayerName').textContent = next.label;
+  // next.label itself must stay the plain prayer name ('Fajr'/'Maghrib') since
+  // the active-row lookup below matches on it — the Ramadan text goes only
+  // into what's displayed, not the underlying label.
+  let nameTxt = next.label;
+  if(isRamadan){
+    if(next.label === 'Fajr') nameTxt = 'Fajr (Suhoor ends)';
+    else if(next.label === 'Maghrib') nameTxt = 'Maghrib (Iftar)';
+  }
+  document.getElementById('nextPrayerName').textContent = nameTxt;
   document.getElementById('nextPrayerSub').textContent = 'at ' + fmtTime(next.h % 24);
 
   const diff = next.h - nowH;
@@ -910,13 +986,19 @@ function haversineMeters(lat1,lon1,lat2,lon2){
 function fmtDist(m){ return m < 1000 ? `${Math.round(m)} m` : `${(m/1000).toFixed(1)} km`; }
 function escapeHtml(s){ const d=document.createElement('div'); d.textContent = s; return d.innerHTML; }
 
+// One entry per Nearby search kind — the empty-state noun and Google Maps
+// search terms differ, everything else about the search is shared.
+const NEARBY_LABELS = {
+  mosque:      { empty:'masjid',      gmapsQuery:'mosque',           gmapsBtn:'Search mosques in Google Maps' },
+  halal:       { empty:'halal spot',  gmapsQuery:'halal restaurant', gmapsBtn:'Search halal food in Google Maps' },
+  prayer_room: { empty:'prayer room', gmapsQuery:'prayer room',      gmapsBtn:'Search prayer rooms in Google Maps' }
+};
+
 // Place names come from OpenStreetMap (public, editable data), not our own copy —
 // treat them as untrusted text and escape before inserting into the page.
 function renderNearby(kind, items, radiusM){
   if(items.length === 0){
-    nearbyStatus.textContent = kind==='mosque'
-      ? `No mapped masjid found within ${(radiusM/1000).toFixed(0)} km. Try a general maps app.`
-      : `No mapped halal spot found within ${(radiusM/1000).toFixed(0)} km. Try a general maps app.`;
+    nearbyStatus.textContent = `No mapped ${NEARBY_LABELS[kind].empty} found within ${(radiusM/1000).toFixed(0)} km. Try a general maps app.`;
     nearbyList.innerHTML = '';
     return;
   }
@@ -951,7 +1033,7 @@ function parseOverpass(kind, lat, lon, data){
     const elat = el.lat != null ? el.lat : (el.center && el.center.lat);
     const elon = el.lon != null ? el.lon : (el.center && el.center.lon);
     if(elat == null || elon == null) return;
-    const name = (el.tags && el.tags.name) || (kind==='mosque' ? 'Unnamed masjid' : 'Unnamed halal spot');
+    const name = (el.tags && el.tags.name) || ('Unnamed ' + NEARBY_LABELS[kind].empty);
     const key = name + '|' + elat.toFixed(4) + '|' + elon.toFixed(4);
     if(seen.has(key)) return;
     seen.add(key);
@@ -960,13 +1042,20 @@ function parseOverpass(kind, lat, lon, data){
   items.sort((a,b)=>a.dist-b.dist);
   return items.slice(0,15);
 }
+// Overpass query per search kind. "prayer_room" is kept separate from
+// "mosque" rather than merged into it — that OSM tag also covers generic
+// multi-faith rooms, so folding it in risks mislabeling a non-Islamic space
+// as a masjid.
+const OVERPASS_QUERIES = {
+  mosque: (r,lat,lon) => `[out:json][timeout:25];(node["amenity"="place_of_worship"]["religion"="muslim"](around:${r},${lat},${lon});way["amenity"="place_of_worship"]["religion"="muslim"](around:${r},${lat},${lon}););out center 30;`,
+  halal: (r,lat,lon) => `[out:json][timeout:25];(node["amenity"~"restaurant|cafe|fast_food"]["diet:halal"~"yes|only"](around:${r},${lat},${lon});way["amenity"~"restaurant|cafe|fast_food"]["diet:halal"~"yes|only"](around:${r},${lat},${lon});node["amenity"~"restaurant|cafe|fast_food"]["cuisine"~"halal"](around:${r},${lat},${lon}););out center 40;`,
+  prayer_room: (r,lat,lon) => `[out:json][timeout:25];(node["amenity"="prayer_room"](around:${r},${lat},${lon});way["amenity"="prayer_room"](around:${r},${lat},${lon}););out center 30;`
+};
 // Race all mirrors at once instead of trying them one after another — if one
 // mirror is blocked or slow on this network, whichever answers first wins,
 // instead of the user waiting through several timeouts in a row.
 async function queryOverpass(kind, lat, lon, radiusM){
-  const q = kind === 'mosque'
-    ? `[out:json][timeout:25];(node["amenity"="place_of_worship"]["religion"="muslim"](around:${radiusM},${lat},${lon});way["amenity"="place_of_worship"]["religion"="muslim"](around:${radiusM},${lat},${lon}););out center 30;`
-    : `[out:json][timeout:25];(node["amenity"~"restaurant|cafe|fast_food"]["diet:halal"~"yes|only"](around:${radiusM},${lat},${lon});way["amenity"~"restaurant|cafe|fast_food"]["diet:halal"~"yes|only"](around:${radiusM},${lat},${lon});node["amenity"~"restaurant|cafe|fast_food"]["cuisine"~"halal"](around:${radiusM},${lat},${lon}););out center 40;`;
+  const q = OVERPASS_QUERIES[kind](radiusM, lat, lon);
 
   const attempts = OVERPASS_MIRRORS.map(endpoint =>
     fetchWithTimeout(endpoint, { method:'POST', body: q }, 15000)
@@ -982,12 +1071,12 @@ async function queryOverpass(kind, lat, lon, radiusM){
 }
 
 function renderGoogleFallback(kind, lat, lon){
-  const query = kind === 'mosque' ? 'mosque' : 'halal restaurant';
-  const gmapsUrl = `https://www.google.com/maps/search/${encodeURIComponent(query)}/@${lat},${lon},14z`;
+  const labels = NEARBY_LABELS[kind];
+  const gmapsUrl = `https://www.google.com/maps/search/${encodeURIComponent(labels.gmapsQuery)}/@${lat},${lon},14z`;
   const a = document.createElement('a');
   a.className = 'btn-secondary'; a.style.display='block'; a.style.marginTop='6px'; a.style.textDecoration='none';
   a.href = gmapsUrl; a.target = '_blank'; a.rel = 'noopener';
-  a.textContent = kind === 'mosque' ? 'Search mosques in Google Maps' : 'Search halal food in Google Maps';
+  a.textContent = labels.gmapsBtn;
   nearbyList.innerHTML = '';
   nearbyList.appendChild(a);
 }
@@ -1027,10 +1116,12 @@ function findNearby(kind){
 }
 document.getElementById('findMosqueBtn').addEventListener('click', ()=>findNearby('mosque'));
 document.getElementById('findHalalBtn').addEventListener('click', ()=>findNearby('halal'));
+document.getElementById('findPrayerRoomBtn').addEventListener('click', ()=>findNearby('prayer_room'));
 
 // ---------- Calculation method / madhab settings ----------
 const methodSel = document.getElementById('methodSel');
 const madhabSel = document.getElementById('madhabSel');
+const travelSel = document.getElementById('travelSel');
 Object.keys(CALC_METHODS).forEach(key=>{
   const o = document.createElement('option');
   o.value = key; o.textContent = CALC_METHODS[key].label;
@@ -1038,6 +1129,7 @@ Object.keys(CALC_METHODS).forEach(key=>{
 });
 methodSel.value = calcMethodKey;
 madhabSel.value = asrMadhabKey;
+travelSel.value = travelMode ? '1' : '0';
 
 function ishaDesc(m){ return m.ishaInterval != null ? `Isha ${m.ishaInterval} min after Maghrib` : `Isha ${m.isha}°`; }
 function updateCalcSummary(){
@@ -1046,17 +1138,31 @@ function updateCalcSummary(){
   document.getElementById('calcSummary').innerHTML =
     `<b>${m.label}</b> — Fajr ${m.fajr}°, ${ishaDesc(m)}. Asr: <b>${madhab}</b>. Times update on-device.`;
 }
+// Qasr (shortening) / Jama' (combining) is a rakah-count and timing-permission
+// rule, not a change to when prayer windows occur — the times above stay
+// exactly as calculated. This is guidance text only.
+function updateTravelGuidance(){
+  const el = document.getElementById('travelGuidance');
+  el.style.display = travelMode ? '' : 'none';
+  if(!travelMode) return;
+  el.innerHTML = `<b>Traveling (Qasr/Jama')</b> — pending verification: Dhuhr, Asr &amp; Isha shorten 4→2 rakahs; Fajr &amp; Maghrib are unchanged. Dhuhr+Asr and Maghrib+Isha may be combined: both at the earlier prayer's time (Jama' Taqdim) or both at the later prayer's time (Jama' Ta'khir). The times above don't change — this only affects rakah count and whether you combine.`;
+}
 function onCalcChange(){
   calcMethodKey = methodSel.value;
   asrMadhabKey = madhabSel.value;
+  travelMode = travelSel.value === '1';
   lsSet('qs_calcMethod', calcMethodKey);
   lsSet('qs_asrMadhab', asrMadhabKey);
+  lsSet('qs_travelMode', travelSel.value);
   updateCalcSummary();
+  updateTravelGuidance();
   if(currentPos) refreshPrayerUI(currentPos.latitude, currentPos.longitude);
 }
 methodSel.addEventListener('change', onCalcChange);
 madhabSel.addEventListener('change', onCalcChange);
+travelSel.addEventListener('change', onCalcChange);
 updateCalcSummary();
+updateTravelGuidance();
 </script>
 </body>
 </html>
