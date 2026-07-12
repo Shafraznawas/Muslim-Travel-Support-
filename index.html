@@ -584,7 +584,15 @@ let lastFixWasMoving = false;
 let deviceHeading = null;   // smoothed compass heading, deg clockwise from MAGNETIC north
 let orientationOn = false;
 let lastDialWrite = 0;
+let lastOrientationAt = 0;  // performance.now() of the last compass reading (0 = never)
 let magneticDeclination = 0; // WMM declination at current position (deg east +); added to a magnetic heading to get true heading
+
+// Track-mode (flight) hysteresis. GPS ground-track is only meaningful during
+// sustained fast travel; a stationary phone emits noisy speed/heading that must
+// NOT flip the dial. Require several consecutive genuinely-moving fixes to enter
+// and a couple of slow fixes to leave.
+let movingStreak = 0, slowStreak = 0, trackActive = false;
+let lastGoodBearing = null; // last Qibla bearing from an acceptable-accuracy fix
 
 // Phone compass reads magnetic north; the Qibla bearing is true north. Add the
 // local declination so the on-ground dial and needle are referenced to true north.
@@ -657,6 +665,7 @@ function handleOrientation(e){
     h = (360 - e.alpha + screenAngle) % 360;
   }
   if(h === null) return;
+  lastOrientationAt = performance.now(); // mark that the compass sensor is alive
 
   // Circular low-pass filter: shortest-way lerp so 359°→1° doesn't swing the long way.
   if(deviceHeading === null) deviceHeading = h;
@@ -777,39 +786,62 @@ document.getElementById('locateBtn').addEventListener('click', ()=>{
 
     const lat = pos.coords.latitude, lon = pos.coords.longitude;
     const heading = pos.coords.heading, speed = pos.coords.speed;
-    const qBearing = qiblaBearing(lat, lon);
-    bearingNum.textContent = Math.round(qBearing) + '°';
+    const acc = Math.round(pos.coords.accuracy);
     locCoords.textContent = `${lat.toFixed(3)}°, ${lon.toFixed(3)}°`;
     locAlt.textContent = pos.coords.altitude != null ? `alt ${Math.round(pos.coords.altitude)}m` : 'alt --';
 
-    // GPS ground track (direction of travel) is derived from successive satellite
-    // fixes — no magnetometer, no internet. It only exists while moving; when
-    // stationary the device compass (if responding) drives the dial instead.
-    const tracking = Number.isFinite(heading) && speed != null && speed > 1.5;
-    const acc = Math.round(pos.coords.accuracy);
-    const accTxt = acc > 5000 ? `±${(acc/1000).toFixed(0)}km · weak signal, approximate` : `±${acc}m`;
+    // The Qibla bearing barely changes fix-to-fix, but a poor (±km) fix while GPS
+    // is warming up or indoors can swing it wildly. Only trust the bearing from a
+    // usable-accuracy fix; otherwise keep the last good one steady.
+    const bearingUsable = acc <= 500 || lastGoodBearing === null;
+    const qBearing = bearingUsable ? qiblaBearing(lat, lon) : lastGoodBearing;
+    if(bearingUsable) lastGoodBearing = qBearing;
+    bearingNum.textContent = Math.round(qBearing) + '°';
     currentQibla = qBearing;
-    lastFixWasMoving = tracking;
-    // Update the magnetic declination for this position (used to convert the
-    // on-ground compass to true north). GPS heading is already true north.
+
+    // GPS ground-track (flight mode) hysteresis: a fix only "looks moving" at a
+    // real travel speed (>3 m/s ≈ 11 km/h, above walking) with decent accuracy.
+    // Enter track after 3 such fixes in a row; leave after 2 slow fixes. This
+    // stops stationary GPS speed/heading noise from hijacking the needle.
+    const looksMoving = Number.isFinite(heading) && speed != null && speed > 3.0 && acc < 100;
+    if(looksMoving){ movingStreak++; slowStreak = 0; } else { slowStreak++; movingStreak = 0; }
+    if(!trackActive && movingStreak >= 3) trackActive = true;
+    else if(trackActive && slowStreak >= 2) trackActive = false;
+    lastFixWasMoving = trackActive;
+
+    const accTxt = acc > 5000 ? `±${(acc/1000).toFixed(0)}km · weak signal, approximate`
+                 : acc > 500  ? `±${acc}m · weak GPS`
+                 : `±${acc}m`;
+
+    // Update declination for this position (converts the on-ground magnetic
+    // compass to true north; GPS ground-track is already true north).
     magneticDeclination = geomagDeclination(lat, lon, (pos.coords.altitude||0)/1000, decimalYearNow());
 
-    if(tracking){
+    if(trackActive){
+      // Flight/drive mode: the GPS fix drives the dial to the direction of travel.
+      // Skip redrawing on a fix with no heading (e.g. momentarily decelerating) so
+      // the needle holds its last track angle instead of snapping to north-up.
       setDialMode('track');
-      updateNeedle(heading, qBearing);
-      bearingRel.textContent = 'Qibla: ' + describeRelative(qBearing, heading);
-      setStatus('locked', `GPS locked · ${accTxt} · ${Math.round(speed*3.6)} km/h`);
-    }else if(deviceHeading !== null){
-      const trueHeading = trueFromMagnetic(deviceHeading);
-      setDialMode('compass');
-      updateNeedle(trueHeading, qBearing);
-      bearingRel.textContent = 'Qibla: ' + describeRelative(qBearing, trueHeading);
-      setStatus('locked', `GPS locked · ${accTxt} · compass`);
+      if(Number.isFinite(heading)){
+        updateNeedle(heading, qBearing);
+        bearingRel.textContent = 'Qibla: ' + describeRelative(qBearing, heading);
+      }
+      const spTxt = (speed != null && speed > 0) ? ` · ${Math.round(speed*3.6)} km/h` : '';
+      setStatus('locked', `GPS locked · ${accTxt}${spTxt}`);
     }else{
-      setDialMode('static');
-      updateNeedle(0, qBearing);
-      bearingRel.textContent = '';
-      setStatus('locked', `GPS locked · ${accTxt}`);
+      // On the ground: DON'T drive the needle from the GPS fix — that would jump
+      // once per fix. The compass sensor drives it smoothly in handleOrientation.
+      const compassAlive = (performance.now() - lastOrientationAt) < 2500;
+      if(compassAlive){
+        setDialMode('compass');
+        setStatus('locked', `GPS locked · ${accTxt} · compass`);
+      }else{
+        // No compass sensor responding: stable north-up dial, needle = true Qibla.
+        setDialMode('static');
+        updateNeedle(0, qBearing);
+        bearingRel.textContent = 'Align the top of your phone to N, then the needle points to the Qibla';
+        setStatus('locked', `GPS locked · ${accTxt} · no compass — align to N`);
+      }
     }
 
     refreshPrayerUI(lat, lon);
