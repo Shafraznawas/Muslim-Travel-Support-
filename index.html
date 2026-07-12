@@ -100,6 +100,17 @@
     box-shadow: inset 0 2px 12px rgba(0,0,0,0.5), inset 0 0 0 1px rgba(255,255,255,0.03);
     display:flex; align-items:center; justify-content:center;
   }
+  .dial-rotor{
+    position:absolute; inset:0; border-radius:50%;
+    transition:transform 0.4s cubic-bezier(.4,1.4,.6,1);
+  }
+  .travel-marker{
+    position:absolute; top:-4px; left:50%; transform:translateX(-50%);
+    font-size:16px; color:var(--accent-teal); z-index:2;
+    filter:drop-shadow(0 0 6px rgba(62,214,196,0.7));
+    display:none;
+  }
+  .travel-marker.on{display:block;}
   .tick{position:absolute; background:var(--text-faint); left:50%; top:0; width:1px; height:9px; transform-origin:50% 112px;}
   .tick.major{background:var(--text-muted); height:13px; width:1.5px;}
   .cardinal{position:absolute; font-family:var(--font-mono); font-size:11px; color:var(--text-muted); font-weight:600;}
@@ -135,8 +146,9 @@
   }
   .bearing-num{font-family:var(--font-mono); font-size:26px; font-weight:600; color:var(--accent-teal); letter-spacing:0.02em;}
   .bearing-label{font-size:10px; color:var(--text-faint); letter-spacing:0.1em; text-transform:uppercase; margin-top:2px;}
+  .bearing-rel{font-size:12px; color:var(--accent-gold); margin-top:4px; min-height:15px; white-space:nowrap;}
 
-  .compass-hint{text-align:center; font-size:12px; color:var(--text-faint); margin:46px 0 24px; line-height:1.5; padding:0 20px;}
+  .compass-hint{text-align:center; font-size:12px; color:var(--text-faint); margin:64px 0 24px; line-height:1.5; padding:0 20px;}
   .compass-hint b{color:var(--text-muted);}
 
   .btn-primary{
@@ -225,12 +237,15 @@
     <div class="ring pulse" id="pulseRing"></div>
     <div class="ring r1"></div>
     <div class="ring r2"></div>
+    <div class="travel-marker" id="travelMarker">✈</div>
     <div class="compass-face" id="compassFace">
-      <div id="ticks"></div>
-      <span class="cardinal card-n">N</span>
-      <span class="cardinal card-e">E</span>
-      <span class="cardinal card-s">S</span>
-      <span class="cardinal card-w">W</span>
+      <div class="dial-rotor" id="dialRotor">
+        <div id="ticks"></div>
+        <span class="cardinal card-n">N</span>
+        <span class="cardinal card-e">E</span>
+        <span class="cardinal card-s">S</span>
+        <span class="cardinal card-w">W</span>
+      </div>
       <div class="needle-pivot" id="needlePivot">
         <div class="needle">
           <div class="kaaba-mark"></div>
@@ -243,11 +258,12 @@
     <div class="bearing-readout">
       <div class="bearing-num" id="bearingNum">--°</div>
       <div class="bearing-label">Qibla bearing</div>
+      <div class="bearing-rel" id="bearingRel"></div>
     </div>
   </div>
 
   <div class="compass-hint" id="compassHint">
-    Gold needle points to the Kaaba. <b>N is always true north</b> — this is a fixed compass rose, not tied to your phone's magnetometer, so it stays accurate even inside a metal fuselage.
+    Gold needle points to the Kaaba. <b>N is true north</b> at the top. The dial rotates automatically once your phone's compass responds or you start moving (GPS track).
   </div>
 
   <button class="btn-primary" id="locateBtn">Get My Location &amp; Qibla</button>
@@ -283,7 +299,7 @@
   </div>
 
   <div class="note">
-    Calculation: <b>Muslim World League angles</b>, Asr per <b>Shafi'i</b> (1× shadow length). Qasr/Jama' guidance coming in the next update, pending verification. Everything runs on-device from GPS alone — no internet or SIM needed, even mid-flight. Clock times use an <b>estimated local zone from GPS longitude</b> (nearest half-hour), not your phone's home time zone, so they stay meaningful as you cross countries with no signal. This can be off by up to ~1 hour in a few regions where borders don't follow longitude (e.g. China, Nepal).
+    Calculation: <b>Muslim World League angles</b>, Asr per <b>Shafi'i</b> (1× shadow length). Qasr/Jama' guidance coming in the next update, pending verification. Everything runs on-device from GPS alone — no internet or SIM needed, even mid-flight. Clock times use an <b>estimated local zone from GPS longitude</b> (nearest half-hour), not your phone's home time zone, so they stay meaningful as you cross countries with no signal. This can be off by up to ~1 hour in a few regions where borders don't follow longitude (e.g. China, Nepal). In-flight direction uses the <b>GPS ground track</b> (true north); in a crosswind the aircraft's nose can differ from the track by a few degrees (crab angle), so treat the needle as accurate to roughly ±5–10° while flying. On the ground when stationary, the <b>phone's compass</b> takes over — it reads magnetic north, which can differ from true north by a few degrees depending on region, and is disturbed by nearby metal.
   </div>
 
   <footer>WIZTEC LABS · BUILT FOR CREW, BY CREW</footer>
@@ -364,7 +380,10 @@ function sunPosition(jd){
   const L = toRad((q + 1.915*Math.sin(g) + 0.020*Math.sin(2*g)) % 360);
   const e = toRad(23.439 - 0.00000036*D);
   const RA = toDeg(Math.atan2(Math.cos(e)*Math.sin(L), Math.cos(L))) / 15;
-  const eqt = q/15 - ((RA % 24)+24)%24;
+  // Normalize into [-12,+12]: near the March RA wrap, q/15 and RA sit on opposite
+  // sides of the 0/24h boundary and the raw difference comes out ~±24h, which
+  // would shift every prayer time that day by a full day.
+  const eqt = ((q/15 - ((RA % 24)+24)%24 + 12) % 24 + 24) % 24 - 12;
   const decl = Math.asin(Math.sin(e)*Math.sin(L));
   return {decl, eqt};
 }
@@ -422,7 +441,7 @@ function fmtTime(hoursFloat){
   const hh = Math.floor(h);
   const mm = Math.round((h-hh)*60);
   const mm2 = mm===60 ? 0 : mm;
-  const hh2 = mm===60 ? hh+1 : hh;
+  const hh2 = mm===60 ? (hh+1)%24 : hh;
   const period = hh2 >= 12 ? 'PM' : 'AM';
   let h12 = hh2 % 12; if(h12===0) h12=12;
   return `${h12}:${String(mm2).padStart(2,'0')} ${period}`;
@@ -431,14 +450,28 @@ function fmtTime(hoursFloat){
 // ---------- State ----------
 let currentPos = null;
 let watchId = null;
-let orientationHeading = null;
 let times = null;
 let currentTzOffset = null; // estimated local UTC offset, derived from GPS longitude
+
+// Direction sources, best available wins:
+//   'track'   — GPS ground track while moving (true north, satellite-only; in-flight mode)
+//   'compass' — device orientation sensor while stationary (magnetic north; on-ground mode)
+//   'static'  — north-up dial, no live rotation (no sensor, not moving)
+let dialMode = 'static';
+let currentQibla = null;
+let lastFixWasMoving = false;
+let deviceHeading = null;   // smoothed compass heading, deg clockwise from north
+let orientationOn = false;
+let lastDialWrite = 0;
 
 const statusDot = document.getElementById('statusDot');
 const statusText = document.getElementById('statusText');
 const needlePivot = document.getElementById('needlePivot');
+const dialRotor = document.getElementById('dialRotor');
+const travelMarker = document.getElementById('travelMarker');
 const bearingNum = document.getElementById('bearingNum');
+const bearingRel = document.getElementById('bearingRel');
+const compassHint = document.getElementById('compassHint');
 const locCoords = document.getElementById('locCoords');
 const locAlt = document.getElementById('locAlt');
 
@@ -447,17 +480,98 @@ function setStatus(kind, text){
   statusText.textContent = text;
 }
 
-function updateNeedle(deviceHeading, qBearing){
-  // North-up dial: N is always fixed at top (true north). Needle rotates directly
-  // to the true Qibla bearing. This avoids relying on the phone's magnetometer,
-  // which is unreliable in an aircraft cabin and inconsistent across devices.
-  const rel = ((qBearing % 360) + 360) % 360;
-  needlePivot.style.transform = `rotate(${rel}deg)`;
+// Keep CSS-transition rotations taking the short way around (359°→1° must not
+// spin the long way): pick the representation of `target` nearest to `prev`.
+let rotorAngle = 0, needleAngle = 0;
+function unwrap(prev, target){
+  return prev + ((((target - prev) % 360) + 540) % 360) - 180;
 }
 
+function updateNeedle(trackUp, qBearing){
+  // trackUp = dial rotation reference: 0 = north-up (stationary fallback);
+  // otherwise the GPS ground track, so direction-of-travel sits at 12 o'clock
+  // and the needle physically points at the Qibla when the phone's top faces
+  // the front of the aircraft. No magnetometer involved — satellites only.
+  rotorAngle = unwrap(rotorAngle, -trackUp);
+  needleAngle = unwrap(needleAngle, qBearing - trackUp);
+  dialRotor.style.transform = `rotate(${rotorAngle}deg)`;
+  needlePivot.style.transform = `rotate(${needleAngle}deg)`;
+}
+
+function describeRelative(qBearing, heading){
+  const rel = ((qBearing - heading + 540) % 360) - 180; // -180..180, +right/-left
+  const a = Math.round(Math.abs(rel));
+  if(a <= 5) return 'straight ahead';
+  if(a >= 175) return 'directly behind you';
+  return `${a}° to your ${rel > 0 ? 'right' : 'left'}`;
+}
+
+function setDialMode(mode){
+  if(mode === dialMode) return;
+  dialMode = mode;
+  travelMarker.classList.toggle('on', mode === 'track');
+  if(mode === 'track'){
+    compassHint.innerHTML = '<b>Point the top of your phone toward the front of the plane.</b> The dial is turned to your direction of travel (GPS track, ✈ at top), so the gold needle physically points to the Kaaba.';
+  }else if(mode === 'compass'){
+    compassHint.innerHTML = '<b>Phone compass active — the needle points the real way.</b> Hold the phone flat like a tray, away from metal and magnets. Once you\'re moving, GPS track takes over automatically.';
+  }else{
+    compassHint.innerHTML = 'Gold needle points to the Kaaba. <b>N is true north</b> at the top. The dial rotates automatically once your phone\'s compass responds or you start moving (GPS track).';
+  }
+}
+
+// ---------- Device compass (on-ground mode) ----------
+function handleOrientation(e){
+  let h = null;
+  if(typeof e.webkitCompassHeading === 'number' && isFinite(e.webkitCompassHeading)){
+    h = e.webkitCompassHeading; // iOS: tilt-compensated, clockwise from north
+  }else if(e.absolute === true && e.alpha != null){
+    const screenAngle = (screen.orientation && screen.orientation.angle) || 0;
+    h = (360 - e.alpha + screenAngle) % 360;
+  }
+  if(h === null) return;
+
+  // Circular low-pass filter: shortest-way lerp so 359°→1° doesn't swing the long way.
+  if(deviceHeading === null) deviceHeading = h;
+  else deviceHeading = (deviceHeading + 0.25 * (((h - deviceHeading + 540) % 360) - 180) + 360) % 360;
+
+  if(lastFixWasMoving || currentQibla === null) return; // GPS track outranks the magnetometer
+  const now = performance.now();
+  if(now - lastDialWrite < 100) return; // ~10 Hz is plenty for the dial
+  lastDialWrite = now;
+
+  setDialMode('compass');
+  updateNeedle(deviceHeading, currentQibla);
+  bearingRel.textContent = 'Qibla: ' + describeRelative(currentQibla, deviceHeading);
+}
+
+function startOrientation(){
+  if(orientationOn || typeof DeviceOrientationEvent === 'undefined') return;
+  const attach = ()=>{
+    orientationOn = true;
+    const evt = ('ondeviceorientationabsolute' in window) ? 'deviceorientationabsolute' : 'deviceorientation';
+    window.addEventListener(evt, handleOrientation);
+  };
+  if(typeof DeviceOrientationEvent.requestPermission === 'function'){
+    // iOS: must be called from a user gesture; denial just leaves the static fallback
+    DeviceOrientationEvent.requestPermission().then(s=>{ if(s === 'granted') attach(); }).catch(()=>{});
+  }else{
+    attach();
+  }
+}
+
+let calcDayKey = null; // UTC-shifted calendar day the current `times` were computed for
+
 function refreshPrayerUI(lat, lon){
-  currentTzOffset = estimateTzOffset(lon);
+  // Hysteresis: the nearest-half-hour estimate snaps every 3.75° of longitude,
+  // so GPS jitter right on a boundary would flip all displayed times back and
+  // forth by 30 min. Only re-snap once the raw offset leaves the current zone's
+  // band (±0.25h) by a real margin (~0.75° of longitude).
+  const rawOffset = lon/15;
+  if(currentTzOffset === null || Math.abs(rawOffset - currentTzOffset) > 0.3){
+    currentTzOffset = estimateTzOffset(lon);
+  }
   const localDate = positionLocalDate(currentTzOffset);
+  calcDayKey = localDate.getUTCFullYear()*10000 + localDate.getUTCMonth()*100 + localDate.getUTCDate();
   times = calcPrayerTimes(lat, lon, localDate, currentTzOffset);
 
   const rows = document.querySelectorAll('#prayerList .prayer-row');
@@ -477,13 +591,33 @@ function refreshPrayerUI(lat, lon){
 function updateNextPrayer(){
   if(!times || currentTzOffset===null) return;
   const localDate = positionLocalDate(currentTzOffset);
+
+  // Recompute the table when the local calendar day rolls over, even with no
+  // fresh GPS fix — otherwise the rollover reuses yesterday's times.
+  const dayKey = localDate.getUTCFullYear()*10000 + localDate.getUTCMonth()*100 + localDate.getUTCDate();
+  if(calcDayKey !== null && dayKey !== calcDayKey && currentPos){
+    refreshPrayerUI(currentPos.latitude, currentPos.longitude);
+    return;
+  }
+
   const nowH = localDate.getUTCHours() + localDate.getUTCMinutes()/60 + localDate.getUTCSeconds()/3600;
   const order = [['Fajr','fajr'],['Dhuhr','dhuhr'],['Asr','asr'],['Maghrib','maghrib'],['Isha','isha']];
   let next = null;
   for(const [label,key] of order){
     if(times[key]!==null && times[key] > nowH){ next = {label, h: times[key]}; break; }
   }
-  if(!next){ next = {label:'Fajr', h: times.fajr + 24}; } // tomorrow's fajr (approx)
+  if(!next){
+    if(times.fajr === null){
+      // Extreme latitude: 18° twilight never occurs, so there is no computable
+      // Fajr to count down to — say so instead of inventing a midnight time.
+      document.getElementById('nextPrayerName').textContent = '—';
+      document.getElementById('nextPrayerSub').textContent = 'Fajr not computable at this latitude (follow nearest-city or fatwa guidance)';
+      document.getElementById('countdown').textContent = '--:--';
+      document.querySelectorAll('#prayerList .prayer-row').forEach(r=>r.classList.remove('active'));
+      return;
+    }
+    next = {label:'Fajr', h: times.fajr + 24}; // tomorrow's fajr (approx)
+  }
 
   document.getElementById('nextPrayerName').textContent = next.label;
   document.getElementById('nextPrayerSub').textContent = 'at ' + fmtTime(next.h % 24);
@@ -501,6 +635,7 @@ setInterval(updateNextPrayer, 1000);
 
 // ---------- Geolocation ----------
 document.getElementById('locateBtn').addEventListener('click', ()=>{
+  startOrientation(); // inside the click: iOS motion permission needs a user gesture
   if(!navigator.geolocation){
     setStatus('searching','GPS not supported on this device');
     return;
@@ -510,25 +645,52 @@ document.getElementById('locateBtn').addEventListener('click', ()=>{
   if(watchId) navigator.geolocation.clearWatch(watchId);
   watchId = navigator.geolocation.watchPosition(pos=>{
     currentPos = pos.coords;
-    setStatus('locked', `GPS locked · ±${Math.round(pos.coords.accuracy)}m`);
 
     const lat = pos.coords.latitude, lon = pos.coords.longitude;
+    const heading = pos.coords.heading, speed = pos.coords.speed;
     const qBearing = qiblaBearing(lat, lon);
     bearingNum.textContent = Math.round(qBearing) + '°';
     locCoords.textContent = `${lat.toFixed(3)}°, ${lon.toFixed(3)}°`;
-    locAlt.textContent = pos.coords.altitude ? `alt ${Math.round(pos.coords.altitude)}m` : 'alt --';
+    locAlt.textContent = pos.coords.altitude != null ? `alt ${Math.round(pos.coords.altitude)}m` : 'alt --';
 
-    // North-up dial — needle always shows the true Qibla bearing directly.
-    updateNeedle(0, qBearing);
+    // GPS ground track (direction of travel) is derived from successive satellite
+    // fixes — no magnetometer, no internet. It only exists while moving; when
+    // stationary the device compass (if responding) drives the dial instead.
+    const tracking = Number.isFinite(heading) && speed != null && speed > 1.5;
+    const acc = Math.round(pos.coords.accuracy);
+    const accTxt = acc > 5000 ? `±${(acc/1000).toFixed(0)}km · weak signal, approximate` : `±${acc}m`;
+    currentQibla = qBearing;
+    lastFixWasMoving = tracking;
+
+    if(tracking){
+      setDialMode('track');
+      updateNeedle(heading, qBearing);
+      bearingRel.textContent = 'Qibla: ' + describeRelative(qBearing, heading);
+      setStatus('locked', `GPS locked · ${accTxt} · ${Math.round(speed*3.6)} km/h`);
+    }else if(deviceHeading !== null){
+      setDialMode('compass');
+      updateNeedle(deviceHeading, qBearing);
+      bearingRel.textContent = 'Qibla: ' + describeRelative(qBearing, deviceHeading);
+      setStatus('locked', `GPS locked · ${accTxt} · compass`);
+    }else{
+      setDialMode('static');
+      updateNeedle(0, qBearing);
+      bearingRel.textContent = '';
+      setStatus('locked', `GPS locked · ${accTxt}`);
+    }
 
     refreshPrayerUI(lat, lon);
   }, err=>{
-    setStatus('searching', 'Location unavailable — check permissions');
+    if(err.code === 1){ // PERMISSION_DENIED — browser won't retry the watch
+      setStatus('searching', 'Location permission denied — enable it in settings, then tap again');
+    }else{ // POSITION_UNAVAILABLE / TIMEOUT — watch keeps trying
+      setStatus('searching', 'No GPS fix yet — keep the phone near a window, still trying…');
+    }
   }, { enableHighAccuracy:true, maximumAge:5000, timeout:20000 });
 });
 
-// Note: magnetometer/device-compass code intentionally removed — the dial is
-// fixed north-up now, so needle accuracy no longer depends on the phone's sensor.
+// Direction source priority: GPS ground track (moving, true north) beats the
+// device compass (stationary, magnetic north) beats the static north-up dial.
 </script>
 </body>
 </html>
