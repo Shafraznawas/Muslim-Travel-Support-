@@ -233,6 +233,25 @@
     padding:9px 2px 2px; border-top:1px solid var(--panel-border); margin-top:2px;
   }
   .calc-summary b{color:var(--accent-teal-dim);}
+  .nearby-btns{display:flex; gap:10px; margin-bottom:4px;}
+  .btn-secondary{
+    flex:1; padding:12px 8px; border-radius:10px; border:1px solid var(--panel-border);
+    background:var(--bg-deep); color:var(--text-primary); font-weight:600; font-size:12.5px;
+    font-family:var(--font-body); cursor:pointer; text-align:center;
+  }
+  .btn-secondary:active{opacity:0.8; border-color:var(--accent-teal);}
+  .nearby-status{font-size:11.5px; color:var(--text-faint); margin:10px 2px 2px; line-height:1.5;}
+  .nearby-item{
+    display:flex; align-items:center; justify-content:space-between; gap:10px;
+    padding:10px 4px; border-bottom:1px solid rgba(30,58,92,0.5);
+  }
+  .nearby-item:last-child{border-bottom:none;}
+  .nearby-name{font-size:13.5px; color:var(--text-primary); font-weight:500;}
+  .nearby-dist{font-family:var(--font-mono); font-size:11px; color:var(--text-faint); margin-top:2px;}
+  .nearby-link{
+    font-size:11.5px; color:var(--accent-teal); text-decoration:none; white-space:nowrap;
+    border:1px solid rgba(62,214,196,0.35); border-radius:8px; padding:6px 10px;
+  }
   .note{
     font-size:11px; color:var(--text-faint); line-height:1.6; text-align:center;
     padding:0 10px; margin:22px 0 10px;
@@ -330,6 +349,16 @@
       <span id="locCoords">lat --, lon --</span>
       <span id="locAlt">alt --</span>
     </div>
+  </div>
+
+  <div class="panel">
+    <div class="panel-title">Nearby</div>
+    <div class="nearby-btns">
+      <button class="btn-secondary" id="findMosqueBtn">🕌 Closest Masjid</button>
+      <button class="btn-secondary" id="findHalalBtn">🍽 Closest Halal Food</button>
+    </div>
+    <div class="nearby-status" id="nearbyStatus">Needs internet. Uses your current location.</div>
+    <div id="nearbyList"></div>
   </div>
 
   <div class="panel">
@@ -867,6 +896,94 @@ document.getElementById('locateBtn').addEventListener('click', ()=>{
 
 // Direction source priority: GPS ground track (moving, true north) beats the
 // device compass (stationary, magnetic north) beats the static north-up dial.
+
+// ---------- Nearby: closest masjid / halal food (OpenStreetMap, needs internet) ----------
+const nearbyStatus = document.getElementById('nearbyStatus');
+const nearbyList = document.getElementById('nearbyList');
+
+function haversineMeters(lat1,lon1,lat2,lon2){
+  const R = 6371000;
+  const dLat = toRad(lat2-lat1), dLon = toRad(lon2-lon1);
+  const a = Math.sin(dLat/2)**2 + Math.cos(toRad(lat1))*Math.cos(toRad(lat2))*Math.sin(dLon/2)**2;
+  return 2*R*Math.asin(Math.sqrt(a));
+}
+function fmtDist(m){ return m < 1000 ? `${Math.round(m)} m` : `${(m/1000).toFixed(1)} km`; }
+function escapeHtml(s){ const d=document.createElement('div'); d.textContent = s; return d.innerHTML; }
+
+// Place names come from OpenStreetMap (public, editable data), not our own copy —
+// treat them as untrusted text and escape before inserting into the page.
+function renderNearby(kind, items, radiusM){
+  if(items.length === 0){
+    nearbyStatus.textContent = kind==='mosque'
+      ? `No mapped masjid found within ${(radiusM/1000).toFixed(0)} km. Try a general maps app.`
+      : `No mapped halal spot found within ${(radiusM/1000).toFixed(0)} km. Try a general maps app.`;
+    nearbyList.innerHTML = '';
+    return;
+  }
+  nearbyStatus.textContent = `${items.length} found within ${(radiusM/1000).toFixed(0)} km, closest first (from OpenStreetMap):`;
+  nearbyList.innerHTML = items.map(it => `
+    <div class="nearby-item">
+      <div>
+        <div class="nearby-name">${escapeHtml(it.name)}</div>
+        <div class="nearby-dist">${fmtDist(it.dist)} away</div>
+      </div>
+      <a class="nearby-link" href="https://www.google.com/maps/dir/?api=1&destination=${it.lat},${it.lon}" target="_blank" rel="noopener">Directions</a>
+    </div>`).join('');
+}
+
+function queryOverpass(kind, lat, lon, radiusM){
+  const q = kind === 'mosque'
+    ? `[out:json][timeout:25];(node["amenity"="place_of_worship"]["religion"="muslim"](around:${radiusM},${lat},${lon});way["amenity"="place_of_worship"]["religion"="muslim"](around:${radiusM},${lat},${lon}););out center 30;`
+    : `[out:json][timeout:25];(node["amenity"~"restaurant|cafe|fast_food"]["diet:halal"~"yes|only"](around:${radiusM},${lat},${lon});way["amenity"~"restaurant|cafe|fast_food"]["diet:halal"~"yes|only"](around:${radiusM},${lat},${lon});node["amenity"~"restaurant|cafe|fast_food"]["cuisine"~"halal"](around:${radiusM},${lat},${lon}););out center 40;`;
+
+  return fetch('https://overpass-api.de/api/interpreter', { method:'POST', body: q })
+    .then(r=>{ if(!r.ok) throw new Error('bad response'); return r.json(); })
+    .then(data=>{
+      const seen = new Set();
+      const items = [];
+      (data.elements||[]).forEach(el=>{
+        const elat = el.lat != null ? el.lat : (el.center && el.center.lat);
+        const elon = el.lon != null ? el.lon : (el.center && el.center.lon);
+        if(elat == null || elon == null) return;
+        const name = (el.tags && el.tags.name) || (kind==='mosque' ? 'Unnamed masjid' : 'Unnamed halal spot');
+        const key = name + '|' + elat.toFixed(4) + '|' + elon.toFixed(4);
+        if(seen.has(key)) return;
+        seen.add(key);
+        items.push({ name, lat: elat, lon: elon, dist: haversineMeters(lat, lon, elat, elon) });
+      });
+      items.sort((a,b)=>a.dist-b.dist);
+      return items.slice(0,15);
+    });
+}
+
+function findNearby(kind){
+  nearbyList.innerHTML = '';
+  const radiusM = 8000;
+
+  function proceed(lat, lon){
+    nearbyStatus.textContent = 'Searching nearby…';
+    queryOverpass(kind, lat, lon, radiusM)
+      .then(items => renderNearby(kind, items, radiusM))
+      .catch(()=>{ nearbyStatus.textContent = 'Could not reach the map service — check your internet connection and try again.'; });
+  }
+
+  if(currentPos){
+    proceed(currentPos.latitude, currentPos.longitude);
+    return;
+  }
+  nearbyStatus.textContent = 'Getting your location…';
+  if(!navigator.geolocation){
+    nearbyStatus.textContent = 'GPS not supported on this device.';
+    return;
+  }
+  navigator.geolocation.getCurrentPosition(pos=>{
+    proceed(pos.coords.latitude, pos.coords.longitude);
+  }, ()=>{
+    nearbyStatus.textContent = 'Could not get your location — enable location access and try again.';
+  }, { enableHighAccuracy:true, timeout:15000 });
+}
+document.getElementById('findMosqueBtn').addEventListener('click', ()=>findNearby('mosque'));
+document.getElementById('findHalalBtn').addEventListener('click', ()=>findNearby('halal'));
 
 // ---------- Calculation method / madhab settings ----------
 const methodSel = document.getElementById('methodSel');
