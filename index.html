@@ -944,36 +944,41 @@ function fetchWithTimeout(url, opts, ms){
   const timer = setTimeout(()=>ctrl.abort(), ms);
   return fetch(url, {...opts, signal: ctrl.signal}).finally(()=>clearTimeout(timer));
 }
+function parseOverpass(kind, lat, lon, data){
+  const seen = new Set();
+  const items = [];
+  (data.elements||[]).forEach(el=>{
+    const elat = el.lat != null ? el.lat : (el.center && el.center.lat);
+    const elon = el.lon != null ? el.lon : (el.center && el.center.lon);
+    if(elat == null || elon == null) return;
+    const name = (el.tags && el.tags.name) || (kind==='mosque' ? 'Unnamed masjid' : 'Unnamed halal spot');
+    const key = name + '|' + elat.toFixed(4) + '|' + elon.toFixed(4);
+    if(seen.has(key)) return;
+    seen.add(key);
+    items.push({ name, lat: elat, lon: elon, dist: haversineMeters(lat, lon, elat, elon) });
+  });
+  items.sort((a,b)=>a.dist-b.dist);
+  return items.slice(0,15);
+}
+// Race all mirrors at once instead of trying them one after another — if one
+// mirror is blocked or slow on this network, whichever answers first wins,
+// instead of the user waiting through several timeouts in a row.
 async function queryOverpass(kind, lat, lon, radiusM){
   const q = kind === 'mosque'
     ? `[out:json][timeout:25];(node["amenity"="place_of_worship"]["religion"="muslim"](around:${radiusM},${lat},${lon});way["amenity"="place_of_worship"]["religion"="muslim"](around:${radiusM},${lat},${lon}););out center 30;`
     : `[out:json][timeout:25];(node["amenity"~"restaurant|cafe|fast_food"]["diet:halal"~"yes|only"](around:${radiusM},${lat},${lon});way["amenity"~"restaurant|cafe|fast_food"]["diet:halal"~"yes|only"](around:${radiusM},${lat},${lon});node["amenity"~"restaurant|cafe|fast_food"]["cuisine"~"halal"](around:${radiusM},${lat},${lon}););out center 40;`;
 
-  let lastErr;
-  for(const endpoint of OVERPASS_MIRRORS){
-    try{
-      const r = await fetchWithTimeout(endpoint, { method:'POST', body: q }, 12000);
-      if(!r.ok) throw new Error('bad response');
-      const data = await r.json();
-      const seen = new Set();
-      const items = [];
-      (data.elements||[]).forEach(el=>{
-        const elat = el.lat != null ? el.lat : (el.center && el.center.lat);
-        const elon = el.lon != null ? el.lon : (el.center && el.center.lon);
-        if(elat == null || elon == null) return;
-        const name = (el.tags && el.tags.name) || (kind==='mosque' ? 'Unnamed masjid' : 'Unnamed halal spot');
-        const key = name + '|' + elat.toFixed(4) + '|' + elon.toFixed(4);
-        if(seen.has(key)) return;
-        seen.add(key);
-        items.push({ name, lat: elat, lon: elon, dist: haversineMeters(lat, lon, elat, elon) });
-      });
-      items.sort((a,b)=>a.dist-b.dist);
-      return items.slice(0,15);
-    }catch(e){
-      lastErr = e; // this mirror failed or timed out — try the next one
-    }
+  const attempts = OVERPASS_MIRRORS.map(endpoint =>
+    fetchWithTimeout(endpoint, { method:'POST', body: q }, 15000)
+      .then(r=>{ if(!r.ok) throw new Error('bad response'); return r.json(); })
+      .then(data=>parseOverpass(kind, lat, lon, data))
+  );
+  try{
+    return await Promise.any(attempts);
+  }catch(aggErr){
+    (aggErr.errors||[aggErr]).forEach(e=>console.warn('Nearby search: a map mirror failed', e));
+    throw aggErr;
   }
-  throw lastErr;
 }
 
 function findNearby(kind){
@@ -984,7 +989,21 @@ function findNearby(kind){
     nearbyStatus.textContent = 'Searching nearby…';
     queryOverpass(kind, lat, lon, radiusM)
       .then(items => renderNearby(kind, items, radiusM))
-      .catch(()=>{ nearbyStatus.textContent = 'Could not reach the map service — check your internet connection and try again.'; });
+      .catch(()=>{
+        // All map-data mirrors failed to answer (blocked/overloaded on this
+        // network). Fall back to opening Google Maps directly — it has its
+        // own data and connection, so this works even when Overpass can't be
+        // reached at all.
+        const query = kind === 'mosque' ? 'mosque' : 'halal restaurant';
+        const gmapsUrl = `https://www.google.com/maps/search/${encodeURIComponent(query)}/@${lat},${lon},14z`;
+        nearbyStatus.textContent = 'Could not reach the map data service on this network.';
+        const a = document.createElement('a');
+        a.className = 'btn-secondary'; a.style.display='block'; a.style.marginTop='6px'; a.style.textDecoration='none';
+        a.href = gmapsUrl; a.target = '_blank'; a.rel = 'noopener';
+        a.textContent = kind === 'mosque' ? 'Search mosques in Google Maps' : 'Search halal food in Google Maps';
+        nearbyList.innerHTML = '';
+        nearbyList.appendChild(a);
+      });
   }
 
   if(currentPos){
