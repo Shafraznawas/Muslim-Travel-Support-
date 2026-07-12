@@ -981,28 +981,32 @@ async function queryOverpass(kind, lat, lon, radiusM){
   }
 }
 
+function renderGoogleFallback(kind, lat, lon){
+  const query = kind === 'mosque' ? 'mosque' : 'halal restaurant';
+  const gmapsUrl = `https://www.google.com/maps/search/${encodeURIComponent(query)}/@${lat},${lon},14z`;
+  const a = document.createElement('a');
+  a.className = 'btn-secondary'; a.style.display='block'; a.style.marginTop='6px'; a.style.textDecoration='none';
+  a.href = gmapsUrl; a.target = '_blank'; a.rel = 'noopener';
+  a.textContent = kind === 'mosque' ? 'Search mosques in Google Maps' : 'Search halal food in Google Maps';
+  nearbyList.innerHTML = '';
+  nearbyList.appendChild(a);
+}
+
 function findNearby(kind){
   nearbyList.innerHTML = '';
   const radiusM = 8000;
 
   function proceed(lat, lon){
-    nearbyStatus.textContent = 'Searching nearby…';
+    // Show the Google Maps option immediately — some networks block the free
+    // map-data service entirely, so don't make the user wait through a search
+    // that's going to fail before they get any option at all. If the nicer
+    // distance-sorted list does come back, it replaces this.
+    nearbyStatus.textContent = 'Searching nearby… (or use Google Maps below right away)';
+    renderGoogleFallback(kind, lat, lon);
     queryOverpass(kind, lat, lon, radiusM)
       .then(items => renderNearby(kind, items, radiusM))
       .catch(()=>{
-        // All map-data mirrors failed to answer (blocked/overloaded on this
-        // network). Fall back to opening Google Maps directly — it has its
-        // own data and connection, so this works even when Overpass can't be
-        // reached at all.
-        const query = kind === 'mosque' ? 'mosque' : 'halal restaurant';
-        const gmapsUrl = `https://www.google.com/maps/search/${encodeURIComponent(query)}/@${lat},${lon},14z`;
-        nearbyStatus.textContent = 'Could not reach the map data service on this network.';
-        const a = document.createElement('a');
-        a.className = 'btn-secondary'; a.style.display='block'; a.style.marginTop='6px'; a.style.textDecoration='none';
-        a.href = gmapsUrl; a.target = '_blank'; a.rel = 'noopener';
-        a.textContent = kind === 'mosque' ? 'Search mosques in Google Maps' : 'Search halal food in Google Maps';
-        nearbyList.innerHTML = '';
-        nearbyList.appendChild(a);
+        nearbyStatus.textContent = 'Could not reach the map data service on this network — use Google Maps below.';
       });
   }
 
