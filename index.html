@@ -187,6 +187,9 @@
   .prayer-row.active .prayer-name{color:var(--accent-teal);}
   .prayer-name{color:var(--text-primary); font-weight:500;}
   .prayer-time{font-family:var(--font-mono); color:var(--text-muted); font-size:14px;}
+  .prayer-row.sub-row{padding-top:0; padding-bottom:8px;}
+  .prayer-row.sub-row .prayer-name{color:var(--text-faint); font-weight:400; font-size:12.5px;}
+  .prayer-row.sub-row .prayer-time{color:var(--text-faint); font-size:12.5px;}
 
   .location-line{
     display:flex; justify-content:space-between; font-family:var(--font-mono); font-size:11px;
@@ -316,11 +319,12 @@
       <div class="countdown" id="countdown">--:--</div>
     </div>
     <div id="prayerList">
-      <div class="prayer-row"><span class="prayer-name">Fajr</span><span class="prayer-time">--:--</span></div>
-      <div class="prayer-row"><span class="prayer-name">Dhuhr</span><span class="prayer-time">--:--</span></div>
-      <div class="prayer-row"><span class="prayer-name">Asr</span><span class="prayer-time">--:--</span></div>
-      <div class="prayer-row"><span class="prayer-name">Maghrib</span><span class="prayer-time">--:--</span></div>
-      <div class="prayer-row"><span class="prayer-name">Isha</span><span class="prayer-time">--:--</span></div>
+      <div class="prayer-row" data-key="fajr"><span class="prayer-name">Fajr</span><span class="prayer-time">--:--</span></div>
+      <div class="prayer-row sub-row" data-key="sunrise"><span class="prayer-name">Sunrise</span><span class="prayer-time">--:--</span></div>
+      <div class="prayer-row" data-key="dhuhr"><span class="prayer-name">Dhuhr</span><span class="prayer-time">--:--</span></div>
+      <div class="prayer-row" data-key="asr"><span class="prayer-name">Asr</span><span class="prayer-time">--:--</span></div>
+      <div class="prayer-row" data-key="maghrib"><span class="prayer-name">Maghrib</span><span class="prayer-time">--:--</span></div>
+      <div class="prayer-row" data-key="isha"><span class="prayer-name">Isha</span><span class="prayer-time">--:--</span></div>
     </div>
     <div class="location-line">
       <span id="locCoords">lat --, lon --</span>
@@ -700,29 +704,36 @@ function startOrientation(){
 let calcDayKey = null; // UTC-shifted calendar day the current `times` were computed for
 
 function refreshPrayerUI(lat, lon){
-  // Hysteresis: the nearest-half-hour estimate snaps every 3.75° of longitude,
-  // so GPS jitter right on a boundary would flip all displayed times back and
-  // forth by 30 min. Only re-snap once the raw offset leaves the current zone's
-  // band (±0.25h) by a real margin (~0.75° of longitude).
-  const rawOffset = lon/15;
-  if(currentTzOffset === null || Math.abs(rawOffset - currentTzOffset) > 0.3){
-    currentTzOffset = estimateTzOffset(lon);
+  if(trackActive){
+    // Confirmed flight: the phone's clock won't auto-update with no signal, so
+    // keep estimating the zone from GPS position, as before. Hysteresis: the
+    // nearest-half-hour estimate snaps every 3.75° of longitude, so GPS jitter
+    // right on a boundary would flip all displayed times back and forth by
+    // 30 min. Only re-snap once the raw offset leaves the current zone's band
+    // (±0.25h) by a real margin (~0.75° of longitude).
+    const rawOffset = lon/15;
+    if(currentTzOffset === null || Math.abs(rawOffset - currentTzOffset) > 0.3){
+      currentTzOffset = estimateTzOffset(lon);
+    }
+  }else{
+    // On the ground: the phone's own clock already knows the exact time zone
+    // (handles fixed-offset countries like Japan correctly, no rounding guess).
+    currentTzOffset = -new Date().getTimezoneOffset()/60;
   }
   const localDate = positionLocalDate(currentTzOffset);
   calcDayKey = localDate.getUTCFullYear()*10000 + localDate.getUTCMonth()*100 + localDate.getUTCDate();
   times = calcPrayerTimes(lat, lon, localDate, currentTzOffset);
 
-  const rows = document.querySelectorAll('#prayerList .prayer-row');
-  const order = [['Fajr','fajr'],['Dhuhr','dhuhr'],['Asr','asr'],['Maghrib','maghrib'],['Isha','isha']];
-  order.forEach(([label,key],i)=>{
-    rows[i].querySelector('.prayer-time').textContent = fmtTime(times[key]);
+  ['fajr','sunrise','dhuhr','asr','maghrib','isha'].forEach(key=>{
+    document.querySelector(`#prayerList .prayer-row[data-key="${key}"] .prayer-time`).textContent = fmtTime(times[key]);
   });
 
   document.getElementById('dateLabel').textContent = localDate.toLocaleDateString(undefined,{month:'short',day:'numeric', timeZone:'UTC'});
   const sign = currentTzOffset >= 0 ? '+' : '-';
   const abs = Math.abs(currentTzOffset);
   const tzH = Math.floor(abs), tzM = Math.round((abs-tzH)*60);
-  document.getElementById('tzEstimate').textContent = `UTC${sign}${tzH}:${String(tzM).padStart(2,'0')} (by GPS position)`;
+  const tzSrc = trackActive ? 'estimated from GPS position (in-flight)' : "your phone's clock";
+  document.getElementById('tzEstimate').textContent = `UTC${sign}${tzH}:${String(tzM).padStart(2,'0')} (${tzSrc})`;
   updateNextPrayer();
 }
 
@@ -766,8 +777,8 @@ function updateNextPrayer(){
   document.getElementById('countdown').textContent = `${String(dh).padStart(2,'0')}:${String(dm).padStart(2,'0')}`;
 
   document.querySelectorAll('#prayerList .prayer-row').forEach(r=>r.classList.remove('active'));
-  const idx = order.findIndex(o=>o[0]===next.label);
-  if(idx>=0) document.querySelectorAll('#prayerList .prayer-row')[idx].classList.add('active');
+  const activeRow = document.querySelector(`#prayerList .prayer-row[data-key="${next.label.toLowerCase()}"]`);
+  if(activeRow) activeRow.classList.add('active');
 }
 setInterval(updateNextPrayer, 1000);
 
