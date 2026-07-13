@@ -174,6 +174,12 @@
     background:linear-gradient(135deg, rgba(62,214,196,0.12), rgba(62,214,196,0.03));
     border:1px solid rgba(62,214,196,0.35);
   }
+  .special-day-banner{
+    display:block; text-align:center; font-size:14.5px; font-weight:700;
+    color:var(--accent-gold); padding:12px 14px; border-radius:10px; margin-bottom:16px;
+    background:linear-gradient(135deg, rgba(214,179,112,0.16), rgba(214,179,112,0.04));
+    border:1px solid rgba(214,179,112,0.4);
+  }
   .next-prayer-name{font-family:var(--font-display); font-size:15px; font-weight:700; color:var(--accent-teal);}
   .next-prayer-sub{font-size:11px; color:var(--text-faint); margin-top:2px;}
   .countdown{font-family:var(--font-mono); font-size:20px; font-weight:600; color:var(--text-primary);}
@@ -349,14 +355,13 @@
     <div class="calc-summary" id="travelGuidance" style="display:none;"></div>
   </div>
 
+  <div class="special-day-banner" id="specialDaysList"></div>
+
   <div class="panel">
     <div class="panel-title">Salah Times <span id="dateLabel"></span></div>
-    <div class="location-line" style="margin-top:0; padding-top:0; border-top:none; margin-bottom:2px;">
+    <div class="location-line" style="margin-top:0; padding-top:0; border-top:none; margin-bottom:10px;">
       <span id="tzEstimate">Estimated local time zone appears here</span>
       <span id="hijriLabel"></span>
-    </div>
-    <div style="margin-bottom:10px; font-size:12.5px; color:var(--accent-gold); font-weight:600;">
-      <span id="specialDaysList"></span>
     </div>
     <div class="next-prayer-card">
       <div>
