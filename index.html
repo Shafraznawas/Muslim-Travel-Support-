@@ -252,11 +252,22 @@
     font-size:11.5px; color:var(--accent-teal); text-decoration:none; white-space:nowrap;
     border:1px solid rgba(62,214,196,0.35); border-radius:8px; padding:6px 10px;
   }
-  .cal-line{
-    font-size:13px; color:var(--text-muted); text-align:center;
-    padding:14px 10px 0; margin:4px 0 10px; border-top:1px solid var(--panel-border);
+  .hijri-cal-dow{
+    display:grid; grid-template-columns:repeat(7,1fr); gap:4px;
+    font-size:10px; color:var(--text-faint); text-align:center; margin-bottom:6px;
   }
-  .cal-line b{color:var(--accent-teal);}
+  .hijri-cal{display:grid; grid-template-columns:repeat(7,1fr); gap:4px;}
+  .hijri-cal .day{
+    aspect-ratio:1; display:flex; align-items:center; justify-content:center;
+    border-radius:8px; font-family:var(--font-mono); font-size:12.5px;
+    color:var(--text-muted); background:rgba(19,39,67,0.5); position:relative;
+  }
+  .hijri-cal .day.empty{visibility:hidden;}
+  .hijri-cal .day.today{background:var(--accent-teal); color:#06231F; font-weight:700;}
+  .hijri-cal .day.special::after{
+    content:''; position:absolute; bottom:3px; width:4px; height:4px;
+    border-radius:50%; background:var(--accent-gold);
+  }
   .note{
     font-size:11px; color:var(--text-faint); line-height:1.6; text-align:center;
     padding:0 10px; margin:22px 0 10px;
@@ -340,9 +351,12 @@
 
   <div class="panel">
     <div class="panel-title">Salah Times <span id="dateLabel"></span></div>
-    <div class="location-line" style="margin-top:0; padding-top:0; border-top:none; margin-bottom:10px;">
+    <div class="location-line" style="margin-top:0; padding-top:0; border-top:none; margin-bottom:2px;">
       <span id="tzEstimate">Estimated local time zone appears here</span>
       <span id="hijriLabel"></span>
+    </div>
+    <div class="location-line" style="margin-top:0; padding-top:0; border-top:none; margin-bottom:10px;">
+      <span id="specialDaysList"></span>
     </div>
     <div class="next-prayer-card">
       <div>
@@ -387,10 +401,16 @@
   </div>
 
   <div class="note">
-    Prayer times use the <b>calculation method you pick above</b> (angles per that authority), with Asr by your selected madhab. Everything runs on-device from GPS alone — no internet or SIM needed, even mid-flight. Clock times use an <b>estimated local zone from GPS longitude</b> (nearest half-hour), not your phone's home time zone, so they stay meaningful as you cross countries with no signal. This can be off by up to ~1 hour in a few regions where borders don't follow longitude (e.g. China, Nepal). In-flight direction uses the <b>GPS ground track</b> (true north); in a crosswind the aircraft's nose can differ from the track by a few degrees (crab angle), so treat the needle as accurate to roughly ±5–10° while flying. On the ground when stationary, the <b>phone's compass</b> takes over — its magnetic reading is corrected to <b>true north</b> using an on-device World Magnetic Model, so the remaining error is mainly local magnetic interference (nearby metal, speakers, magnets), not declination. The <b>Hijri date</b> shown above uses an on-device calendar calculation, not local moon-sighting, so it can be off by a day or two from an official announcement — treat it as a guide, not an authority.
+    Prayer times use the <b>calculation method you pick above</b> (angles per that authority), with Asr by your selected madhab. Everything runs on-device from GPS alone — no internet or SIM needed, even mid-flight. Clock times use an <b>estimated local zone from GPS longitude</b> (nearest half-hour), not your phone's home time zone, so they stay meaningful as you cross countries with no signal. This can be off by up to ~1 hour in a few regions where borders don't follow longitude (e.g. China, Nepal). In-flight direction uses the <b>GPS ground track</b> (true north); in a crosswind the aircraft's nose can differ from the track by a few degrees (crab angle), so treat the needle as accurate to roughly ±5–10° while flying. On the ground when stationary, the <b>phone's compass</b> takes over — its magnetic reading is corrected to <b>true north</b> using an on-device World Magnetic Model, so the remaining error is mainly local magnetic interference (nearby metal, speakers, magnets), not declination. The <b>Hijri date</b> and the calendar at the bottom both use an on-device calendar calculation, not local moon-sighting, so they can be off by a day or two from an official announcement — treat them as a guide, not an authority.
   </div>
 
-  <div class="cal-line"><b>Islamic Calendar</b> — <span id="specialDaysList"></span></div>
+  <div class="panel">
+    <div class="panel-title">Islamic Calendar <span id="hijriMonthLabel"></span></div>
+    <div class="hijri-cal-dow">
+      <span>S</span><span>M</span><span>T</span><span>W</span><span>T</span><span>F</span><span>S</span>
+    </div>
+    <div class="hijri-cal" id="hijriCalGrid"></div>
+  </div>
 
   <footer>WIZTEC LABS · BUILT FOR CREW, BY CREW</footer>
 </div>
@@ -691,6 +711,44 @@ function upcomingSpecialDays(fromDate){
   return results;
 }
 
+// Builds the current Hijri month as a 7-column grid (day 1 placed under its
+// correct S/M/T/W/T/F/S column). Special days that fall in this month get a
+// small marker dot. All Hijri days map 1:1 to Gregorian days, so day 1's
+// Gregorian date is just today's date minus (today's Hijri day − 1).
+function hijriMonthGrid(fromDate){
+  const todayHijri = hijriFromGregorian(fromDate.getUTCFullYear(), fromDate.getUTCMonth()+1, fromDate.getUTCDate());
+  const firstOfMonth = new Date(fromDate);
+  firstOfMonth.setUTCDate(firstOfMonth.getUTCDate() - (todayHijri.day - 1));
+
+  const cursor = new Date(firstOfMonth);
+  let length = 0;
+  while(true){
+    const h = hijriFromGregorian(cursor.getUTCFullYear(), cursor.getUTCMonth()+1, cursor.getUTCDate());
+    if(h.month !== todayHijri.month || h.year !== todayHijri.year) break;
+    length++;
+    cursor.setUTCDate(cursor.getUTCDate() + 1);
+  }
+
+  const specialDaysInMonth = new Set(SPECIAL_DAYS.filter(sd => sd.month === todayHijri.month).map(sd => sd.day));
+  const leadingEmpty = firstOfMonth.getUTCDay(); // 0=Sun..6=Sat
+  const days = [];
+  for(let d=1; d<=length; d++){
+    days.push({ day: d, isToday: d === todayHijri.day, isSpecial: specialDaysInMonth.has(d) });
+  }
+  return { year: todayHijri.year, month: todayHijri.month, leadingEmpty, days };
+}
+function renderHijriCalendar(fromDate){
+  const cal = hijriMonthGrid(fromDate);
+  document.getElementById('hijriMonthLabel').textContent = `${HIJRI_MONTHS[cal.month-1]} ${cal.year} AH`;
+  const cells = [];
+  for(let i=0; i<cal.leadingEmpty; i++) cells.push('<span class="day empty"></span>');
+  cal.days.forEach(d=>{
+    const cls = 'day' + (d.isToday ? ' today' : '') + (d.isSpecial ? ' special' : '');
+    cells.push(`<span class="${cls}">${d.day}</span>`);
+  });
+  document.getElementById('hijriCalGrid').innerHTML = cells.join('');
+}
+
 // ---------- State ----------
 let currentPos = null;
 let watchId = null;
@@ -861,6 +919,7 @@ function refreshPrayerUI(lat, lon){
   document.getElementById('hijriLabel').textContent = `${hijri.day} ${HIJRI_MONTHS[hijri.month-1]} ${hijri.year} AH (approx.)`;
   updateRamadanLabels(isRamadan);
   renderSpecialDays(upcomingSpecialDays(localDate));
+  renderHijriCalendar(localDate);
 
   updateNextPrayer();
 }
@@ -1242,7 +1301,11 @@ updateTravelGuidance();
 // with the precise local date once a fix comes in).
 (function(){
   const now = new Date();
-  renderSpecialDays(upcomingSpecialDays(new Date(Date.UTC(now.getFullYear(), now.getMonth(), now.getDate()))));
+  const today = new Date(Date.UTC(now.getFullYear(), now.getMonth(), now.getDate()));
+  const hijri = hijriFromGregorian(today.getUTCFullYear(), today.getUTCMonth()+1, today.getUTCDate());
+  document.getElementById('hijriLabel').textContent = `${hijri.day} ${HIJRI_MONTHS[hijri.month-1]} ${hijri.year} AH (approx.)`;
+  renderSpecialDays(upcomingSpecialDays(today));
+  renderHijriCalendar(today);
 })();
 </script>
 </body>
