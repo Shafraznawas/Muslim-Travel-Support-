@@ -1116,7 +1116,12 @@ function parseOverpass(kind, lat, lon, data){
 // as a masjid.
 const OVERPASS_QUERIES = {
   mosque: (r,lat,lon) => `[out:json][timeout:25];(node["amenity"="place_of_worship"]["religion"="muslim"](around:${r},${lat},${lon});way["amenity"="place_of_worship"]["religion"="muslim"](around:${r},${lat},${lon}););out center 30;`,
-  halal: (r,lat,lon) => `[out:json][timeout:25];(node["amenity"~"restaurant|cafe|fast_food"]["diet:halal"~"yes|only"](around:${r},${lat},${lon});way["amenity"~"restaurant|cafe|fast_food"]["diet:halal"~"yes|only"](around:${r},${lat},${lon});node["amenity"~"restaurant|cafe|fast_food"]["cuisine"~"halal"](around:${r},${lat},${lon}););out center 40;`,
+  // Most small restaurants on OpenStreetMap were added by someone who set the
+  // name and amenity type but never filled in diet:halal or cuisine tags, so
+  // a tag-only query misses real places that are on the map but untagged.
+  // Add a same-amenity name match ("halal" in the name, common in practice)
+  // as a second way to find them — still limited to what's on OSM at all.
+  halal: (r,lat,lon) => `[out:json][timeout:25];(node["amenity"~"restaurant|cafe|fast_food"]["diet:halal"~"yes|only"](around:${r},${lat},${lon});way["amenity"~"restaurant|cafe|fast_food"]["diet:halal"~"yes|only"](around:${r},${lat},${lon});node["amenity"~"restaurant|cafe|fast_food"]["cuisine"~"halal"](around:${r},${lat},${lon});way["amenity"~"restaurant|cafe|fast_food"]["cuisine"~"halal"](around:${r},${lat},${lon});node["amenity"~"restaurant|cafe|fast_food"]["name"~"halal",i](around:${r},${lat},${lon});way["amenity"~"restaurant|cafe|fast_food"]["name"~"halal",i](around:${r},${lat},${lon}););out center 40;`,
   prayer_room: (r,lat,lon) => `[out:json][timeout:25];(node["amenity"="prayer_room"](around:${r},${lat},${lon});way["amenity"="prayer_room"](around:${r},${lat},${lon}););out center 30;`
 };
 // Race all mirrors at once instead of trying them one after another — if one
