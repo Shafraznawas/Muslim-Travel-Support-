@@ -1231,6 +1231,14 @@ madhabSel.addEventListener('change', onCalcChange);
 travelSel.addEventListener('change', onCalcChange);
 updateCalcSummary();
 updateTravelGuidance();
+
+// The Hijri calendar only needs today's date, not GPS — show it right away
+// instead of waiting for a location fix (refreshPrayerUI recomputes it later
+// with the precise local date once a fix comes in).
+(function(){
+  const now = new Date();
+  renderSpecialDays(upcomingSpecialDays(new Date(Date.UTC(now.getFullYear(), now.getMonth(), now.getDate()))));
+})();
 </script>
 </body>
 </html>
