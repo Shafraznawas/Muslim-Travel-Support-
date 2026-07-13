@@ -876,8 +876,8 @@ function whenText(daysUntil){
   return daysUntil===0 ? 'today' : daysUntil===1 ? 'tomorrow' : `in ${daysUntil} days`;
 }
 function renderSpecialDays(days){
-  document.getElementById('specialDaysList').textContent =
-    days.map(d => `${d.name} ${whenText(d.daysUntil)}`).join(' · ');
+  const next = days.reduce((a,b) => b.daysUntil < a.daysUntil ? b : a);
+  document.getElementById('specialDaysList').textContent = `${next.name} ${whenText(next.daysUntil)}`;
 }
 
 function updateNextPrayer(){
