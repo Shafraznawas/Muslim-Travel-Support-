@@ -252,13 +252,11 @@
     font-size:11.5px; color:var(--accent-teal); text-decoration:none; white-space:nowrap;
     border:1px solid rgba(62,214,196,0.35); border-radius:8px; padding:6px 10px;
   }
-  .cal-row{
-    display:flex; align-items:center; justify-content:space-between; gap:10px;
-    padding:9px 4px; border-bottom:1px solid rgba(30,58,92,0.5); font-size:13px;
+  .cal-line{
+    font-size:11px; color:var(--text-faint); line-height:1.6; text-align:center;
+    padding:0 10px; margin:0 0 10px;
   }
-  .cal-row:last-child{border-bottom:none;}
-  .cal-name{color:var(--text-primary); font-weight:500;}
-  .cal-when{font-family:var(--font-mono); color:var(--text-muted); font-size:12px; white-space:nowrap; text-align:right;}
+  .cal-line b{color:var(--text-muted);}
   .note{
     font-size:11px; color:var(--text-faint); line-height:1.6; text-align:center;
     padding:0 10px; margin:22px 0 10px;
@@ -342,12 +340,9 @@
 
   <div class="panel">
     <div class="panel-title">Salah Times <span id="dateLabel"></span></div>
-    <div class="location-line" style="margin-top:0; padding-top:0; border-top:none; margin-bottom:2px;">
+    <div class="location-line" style="margin-top:0; padding-top:0; border-top:none; margin-bottom:10px;">
       <span id="tzEstimate">Estimated local time zone appears here</span>
       <span id="hijriLabel"></span>
-    </div>
-    <div class="location-line" style="margin-top:0; padding-top:0; border-top:none; margin-bottom:10px;">
-      <span id="nextSpecialDay"></span>
     </div>
     <div class="next-prayer-card">
       <div>
@@ -382,11 +377,6 @@
   </div>
 
   <div class="panel">
-    <div class="panel-title">Islamic Calendar</div>
-    <div id="specialDaysList"></div>
-  </div>
-
-  <div class="panel">
     <div class="panel-title">Tayammum (Dry Ablution)</div>
     <div id="tayammumList"></div>
   </div>
@@ -397,8 +387,10 @@
   </div>
 
   <div class="note">
-    Prayer times use the <b>calculation method you pick above</b> (angles per that authority), with Asr by your selected madhab. Everything runs on-device from GPS alone — no internet or SIM needed, even mid-flight. Clock times use an <b>estimated local zone from GPS longitude</b> (nearest half-hour), not your phone's home time zone, so they stay meaningful as you cross countries with no signal. This can be off by up to ~1 hour in a few regions where borders don't follow longitude (e.g. China, Nepal). In-flight direction uses the <b>GPS ground track</b> (true north); in a crosswind the aircraft's nose can differ from the track by a few degrees (crab angle), so treat the needle as accurate to roughly ±5–10° while flying. On the ground when stationary, the <b>phone's compass</b> takes over — its magnetic reading is corrected to <b>true north</b> using an on-device World Magnetic Model, so the remaining error is mainly local magnetic interference (nearby metal, speakers, magnets), not declination. The <b>Hijri date</b> and the Islamic Calendar's upcoming special days both use the same on-device calendar calculation, not local moon-sighting, so they can be off by a day or two from an official announcement — treat them as a guide, not an authority.
+    Prayer times use the <b>calculation method you pick above</b> (angles per that authority), with Asr by your selected madhab. Everything runs on-device from GPS alone — no internet or SIM needed, even mid-flight. Clock times use an <b>estimated local zone from GPS longitude</b> (nearest half-hour), not your phone's home time zone, so they stay meaningful as you cross countries with no signal. This can be off by up to ~1 hour in a few regions where borders don't follow longitude (e.g. China, Nepal). In-flight direction uses the <b>GPS ground track</b> (true north); in a crosswind the aircraft's nose can differ from the track by a few degrees (crab angle), so treat the needle as accurate to roughly ±5–10° while flying. On the ground when stationary, the <b>phone's compass</b> takes over — its magnetic reading is corrected to <b>true north</b> using an on-device World Magnetic Model, so the remaining error is mainly local magnetic interference (nearby metal, speakers, magnets), not declination. The <b>Hijri date</b> shown above uses an on-device calendar calculation, not local moon-sighting, so it can be off by a day or two from an official announcement — treat it as a guide, not an authority.
   </div>
+
+  <div class="cal-line"><b>Islamic Calendar</b> — <span id="specialDaysList"></span></div>
 
   <footer>WIZTEC LABS · BUILT FOR CREW, BY CREW</footer>
 </div>
@@ -671,37 +663,31 @@ function hijriFromGregorian(y,m,d){
 }
 
 // Hijri month/day pairs for recurring Islamic dates. A few are regionally or
-// not universally observed — flagged inline rather than stated as settled.
+// Kept to just these four, in this order, per request — Muharram first.
 const SPECIAL_DAYS = [
-  { month:1,  day:1,  name:"Islamic New Year (1 Muharram)" },
-  { month:1,  day:10, name:"Day of Ashura (10 Muharram)" },
-  { month:3,  day:12, name:"Mawlid al-Nabi (12 Rabi' al-Awwal) — not observed by all" },
-  { month:8,  day:15, name:"Nisfu Sha'ban (15 Sha'ban) — regionally observed" },
-  { month:9,  day:1,  name:"Ramadan begins (1 Ramadan)" },
-  { month:9,  day:27, name:"Laylat al-Qadr (estimated 27 Ramadan) — exact night unknown, traditionally sought in the last 10 odd nights" },
-  { month:10, day:1,  name:"Eid al-Fitr (1 Shawwal)" },
-  { month:12, day:9,  name:"Day of Arafah (9 Dhu al-Hijjah)" },
-  { month:12, day:10, name:"Eid al-Adha (10 Dhu al-Hijjah)" }
+  { month:1,  day:1,  name:"Muharram" },
+  { month:1,  day:10, name:"Ashura" },
+  { month:9,  day:1,  name:"Ramadan" },
+  { month:12, day:9,  name:"Hajj" }
 ];
 // There's no Hijri→Gregorian conversion, only hijriFromGregorian(), so find
 // each special day's next occurrence by stepping forward a day at a time
-// (cheap — at most one Hijri year, ~356 iterations) until every entry matches.
+// (cheap — at most one Hijri year, ~356 iterations). Results stay in
+// SPECIAL_DAYS order (Muharram first), not sorted by which is soonest.
 function upcomingSpecialDays(fromDate){
-  const results = [];
-  const seen = new Set();
+  const results = new Array(SPECIAL_DAYS.length).fill(null);
+  let found = 0;
   const cursor = new Date(Date.UTC(fromDate.getUTCFullYear(), fromDate.getUTCMonth(), fromDate.getUTCDate()));
-  for(let i=0; i<=356 && seen.size < SPECIAL_DAYS.length; i++){
+  for(let i=0; i<=356 && found < SPECIAL_DAYS.length; i++){
     const h = hijriFromJDN(Math.floor(julianDate(cursor.getUTCFullYear(), cursor.getUTCMonth()+1, cursor.getUTCDate()) + 0.5));
-    SPECIAL_DAYS.forEach(sd=>{
-      const key = sd.month + '-' + sd.day;
-      if(!seen.has(key) && h.month === sd.month && h.day === sd.day){
-        seen.add(key);
-        results.push({ name: sd.name, daysUntil: i, gregorian: new Date(cursor) });
+    SPECIAL_DAYS.forEach((sd, idx)=>{
+      if(results[idx] === null && h.month === sd.month && h.day === sd.day){
+        results[idx] = { name: sd.name, daysUntil: i };
+        found++;
       }
     });
     cursor.setUTCDate(cursor.getUTCDate() + 1);
   }
-  results.sort((a,b)=>a.daysUntil-b.daysUntil);
   return results;
 }
 
@@ -887,18 +873,11 @@ function updateRamadanLabels(on){
 }
 
 function whenText(daysUntil){
-  return daysUntil===0 ? 'Today' : daysUntil===1 ? 'Tomorrow' : `in ${daysUntil} days`;
+  return daysUntil===0 ? 'today' : daysUntil===1 ? 'tomorrow' : `in ${daysUntil} days`;
 }
 function renderSpecialDays(days){
-  const nextEl = document.getElementById('nextSpecialDay');
-  if(days.length){
-    const n = days[0];
-    nextEl.textContent = `Next: ${n.name.split(' (')[0]} ${whenText(n.daysUntil).toLowerCase()}`;
-  }
-  document.getElementById('specialDaysList').innerHTML = days.map(d=>{
-    const dateTxt = d.gregorian.toLocaleDateString(undefined,{month:'short',day:'numeric', timeZone:'UTC'});
-    return `<div class="cal-row"><span class="cal-name">${d.name}</span><span class="cal-when">${whenText(d.daysUntil)} · ${dateTxt}</span></div>`;
-  }).join('');
+  document.getElementById('specialDaysList').textContent =
+    days.map(d => `${d.name} ${whenText(d.daysUntil)}`).join(' · ');
 }
 
 function updateNextPrayer(){
