@@ -658,6 +658,7 @@ function hijriFromGregorian(y,m,d){
 // ---------- State ----------
 let currentPos = null;
 let watchId = null;
+let deniedRetried = false; // one silent retry for iOS's spurious first-call PERMISSION_DENIED
 let times = null;
 let currentTzOffset = null; // estimated local UTC offset, derived from GPS longitude
 let isRamadan = false; // set from the Hijri month in refreshPrayerUI
@@ -888,16 +889,12 @@ function updateNextPrayer(){
 setInterval(updateNextPrayer, 1000);
 
 // ---------- Geolocation ----------
-document.getElementById('locateBtn').addEventListener('click', ()=>{
-  startOrientation(); // inside the click: iOS motion permission needs a user gesture
-  if(!navigator.geolocation){
-    setStatus('searching','GPS not supported on this device');
-    return;
-  }
-  setStatus('searching','Searching for GPS lock…');
-
+function startWatch(){
   if(watchId) navigator.geolocation.clearWatch(watchId);
-  watchId = navigator.geolocation.watchPosition(pos=>{
+  watchId = navigator.geolocation.watchPosition(handlePositionSuccess, handlePositionError, { enableHighAccuracy:true, maximumAge:5000, timeout:20000 });
+}
+
+function handlePositionSuccess(pos){
     currentPos = pos.coords;
 
     const lat = pos.coords.latitude, lon = pos.coords.longitude;
@@ -961,13 +958,39 @@ document.getElementById('locateBtn').addEventListener('click', ()=>{
     }
 
     refreshPrayerUI(lat, lon);
-  }, err=>{
-    if(err.code === 1){ // PERMISSION_DENIED — browser won't retry the watch
-      setStatus('searching', 'Location permission denied — enable it in settings, then tap again');
-    }else{ // POSITION_UNAVAILABLE / TIMEOUT — watch keeps trying
-      setStatus('searching', 'No GPS fix yet — keep the phone near a window, still trying…');
+}
+
+function handlePositionError(err){
+  if(err.code === 1){ // PERMISSION_DENIED
+    if(!deniedRetried){
+      // iOS Safari sometimes reports PERMISSION_DENIED on the very first
+      // request even when permission is actually granted — a known WebKit
+      // race condition (the system prompt hasn't really been resolved yet,
+      // or a stale cached state). One silent retry clears this up almost
+      // every time, so don't alarm the user over it.
+      deniedRetried = true;
+      setStatus('searching', 'Checking permission…');
+      setTimeout(startWatch, 1000);
+    }else{
+      // Retried and still denied — genuinely stuck. "Check Settings" is a
+      // dead end here since Settings usually already shows it as allowed;
+      // the real fix for iOS's cached permission state is a fresh page load.
+      setStatus('searching', "Location still blocked. If Settings already shows it's allowed, fully close Safari (swipe it away in the app switcher) and reopen this page.");
     }
-  }, { enableHighAccuracy:true, maximumAge:5000, timeout:20000 });
+  }else{ // POSITION_UNAVAILABLE / TIMEOUT — watch keeps trying
+    setStatus('searching', 'No GPS fix yet — keep the phone near a window, still trying…');
+  }
+}
+
+document.getElementById('locateBtn').addEventListener('click', ()=>{
+  startOrientation(); // inside the click: iOS motion permission needs a user gesture
+  if(!navigator.geolocation){
+    setStatus('searching','GPS not supported on this device');
+    return;
+  }
+  setStatus('searching','Searching for GPS lock…');
+  deniedRetried = false;
+  startWatch();
 });
 
 // Direction source priority: GPS ground track (moving, true north) beats the
