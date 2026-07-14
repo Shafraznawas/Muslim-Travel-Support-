@@ -5,6 +5,9 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, maximum-scale=1.0, user-scalable=no">
 <title>Qibla Sky</title>
 <meta name="theme-color" content="#0A1628">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <link rel="manifest" href="data:application/json;base64,eyJuYW1lIjoiUWlibGEgU2t5Iiwic2hvcnRfbmFtZSI6IlFpYmxhIFNreSIsInN0YXJ0X3VybCI6Ii4vIiwiZGlzcGxheSI6InN0YW5kYWxvbmUiLCJiYWNrZ3JvdW5kX2NvbG9yIjoiIzBBMTYyOCIsInRoZW1lX2NvbG9yIjoiIzBBMTYyOCJ9">
 <style>
   :root{
@@ -1312,6 +1315,15 @@ updateTravelGuidance();
   renderSpecialDays(upcomingSpecialDays(today));
   renderHijriCalendar(today);
 })();
+
+// Cache the app shell so Qibla/Salah/duas/calendar keep working with zero
+// signal (the actual point of a flight-crew app) — without this, the browser
+// has nothing to load the page from once you're offline.
+if('serviceWorker' in navigator){
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('./sw.js').catch(()=>{});
+  });
+}
 </script>
 </body>
 </html>
