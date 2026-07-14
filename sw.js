@@ -1,5 +1,5 @@
-const CACHE_NAME = 'qibla-sky-shell-v1';
-const SHELL_URLS = ['./', './index.html'];
+const CACHE_NAME = 'qibla-sky-shell-v2';
+const SHELL_URLS = ['./', './index.html', './manifest.json', './icon-192.png', './icon-512.png'];
 
 self.addEventListener('install', (event) => {
   self.skipWaiting();
