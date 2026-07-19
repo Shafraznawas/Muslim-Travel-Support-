@@ -1,4 +1,4 @@
-const CACHE_NAME = 'qibla-sky-shell-v2';
+const CACHE_NAME = 'qibla-sky-shell-v3';
 const SHELL_URLS = ['./', './index.html', './manifest.json', './icon-192.png', './icon-512.png'];
 
 self.addEventListener('install', (event) => {
@@ -12,9 +12,8 @@ self.addEventListener('activate', (event) => {
   event.waitUntil(
     caches.keys().then((keys) =>
       Promise.all(keys.filter((k) => k !== CACHE_NAME).map((k) => caches.delete(k)))
-    )
+    ).then(() => self.clients.claim())
   );
-  self.clients.claim();
 });
 
 self.addEventListener('fetch', (event) => {
@@ -28,12 +27,24 @@ self.addEventListener('fetch', (event) => {
   if (url.origin !== self.location.origin) return;
 
   event.respondWith(
-    fetch(req)
-      .then((res) => {
-        const resClone = res.clone();
-        caches.open(CACHE_NAME).then((cache) => cache.put(req, resClone));
+    caches.match(req, { ignoreSearch: true }).then((cached) => {
+      // Cache-first: an in-flight app can't afford to wait out a network
+      // timeout on a flaky captive-portal/weak-signal connection before
+      // falling back — serve the known-good cached shell instantly, every
+      // time, and refresh it quietly in the background when online.
+      const network = fetch(req).then((res) => {
+        if (res && res.ok) {
+          const resClone = res.clone();
+          caches.open(CACHE_NAME).then((cache) => cache.put(req, resClone));
+        }
         return res;
-      })
-      .catch(() => caches.match(req).then((cached) => cached || caches.match('./index.html')))
+      }).catch(() => null);
+
+      if (cached) {
+        network.catch(() => {}); // update the cache silently, ignore failures
+        return cached;
+      }
+      return network.then((res) => res || caches.match('./index.html', { ignoreSearch: true }));
+    })
   );
 });
