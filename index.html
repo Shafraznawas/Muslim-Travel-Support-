@@ -153,6 +153,14 @@
   .bearing-num{font-family:var(--font-mono); font-size:26px; font-weight:600; color:var(--accent-teal); letter-spacing:0.02em;}
   .bearing-label{font-size:10px; color:var(--text-faint); letter-spacing:0.1em; text-transform:uppercase; margin-top:2px;}
   .bearing-rel{font-size:12px; color:var(--accent-gold); margin-top:4px; min-height:15px; white-space:nowrap;}
+  .trust-badge{
+    display:inline-block; margin-top:5px; padding:2px 9px; border-radius:20px;
+    font-family:var(--font-mono); font-size:9.5px; font-weight:700; letter-spacing:0.06em; text-transform:uppercase;
+    white-space:nowrap;
+  }
+  .trust-badge.reliable{ background:rgba(62,214,196,0.15); color:var(--accent-teal); border:1px solid rgba(62,214,196,0.4); }
+  .trust-badge.verify{ background:rgba(224,133,133,0.15); color:var(--danger); border:1px solid rgba(224,133,133,0.4); }
+  .trust-badge.neutral{ background:rgba(140,163,189,0.12); color:var(--text-muted); border:1px solid var(--panel-border); }
 
   .compass-hint{text-align:center; font-size:12px; color:var(--text-faint); margin:64px 0 24px; line-height:1.5; padding:0 20px;}
   .compass-hint b{color:var(--text-muted);}
@@ -345,6 +353,7 @@
     <div class="bearing-readout">
       <div class="bearing-num" id="bearingNum">--°</div>
       <div class="bearing-label">Qibla bearing</div>
+      <div class="trust-badge neutral" id="trustBadge">—</div>
       <div class="bearing-rel" id="bearingRel"></div>
     </div>
   </div>
@@ -819,6 +828,7 @@ const dialRotor = document.getElementById('dialRotor');
 const travelMarker = document.getElementById('travelMarker');
 const bearingNum = document.getElementById('bearingNum');
 const bearingRel = document.getElementById('bearingRel');
+const trustBadge = document.getElementById('trustBadge');
 const compassHint = document.getElementById('compassHint');
 const locCoords = document.getElementById('locCoords');
 const locAlt = document.getElementById('locAlt');
@@ -860,10 +870,16 @@ function setDialMode(mode){
   travelMarker.classList.toggle('on', mode === 'track');
   if(mode === 'track'){
     compassHint.innerHTML = '<b>Point the top of your phone toward the front of the plane.</b> The dial is turned to your direction of travel (GPS track, ✈ at top), so the gold needle physically points to the Kaaba.';
+    trustBadge.textContent = 'GPS track · reliable';
+    trustBadge.className = 'trust-badge reliable';
   }else if(mode === 'compass'){
     compassHint.innerHTML = '<b>Phone compass active — the needle points the real way.</b> Hold the phone flat like a tray, away from metal and magnets. Once you\'re moving, GPS track takes over automatically.';
+    trustBadge.textContent = 'Compass · verify manually';
+    trustBadge.className = 'trust-badge verify';
   }else{
     compassHint.innerHTML = 'Gold needle points to the Kaaba. <b>N is true north</b> at the top. The dial rotates automatically once your phone\'s compass responds or you start moving (GPS track).';
+    trustBadge.textContent = 'No live sensor · align to N';
+    trustBadge.className = 'trust-badge neutral';
   }
 }
 
