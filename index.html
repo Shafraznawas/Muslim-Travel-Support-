@@ -165,6 +165,17 @@
   .compass-hint{text-align:center; font-size:12px; color:var(--text-faint); margin:64px 0 24px; line-height:1.5; padding:0 20px;}
   .compass-hint b{color:var(--text-muted);}
 
+  .mode-toggle{
+    display:flex; gap:6px; justify-content:center; margin:0 0 6px;
+  }
+  .mode-btn{
+    flex:1; max-width:120px; padding:8px 4px; border-radius:9px; border:1px solid var(--panel-border);
+    background:var(--bg-deep); color:var(--text-muted); font-weight:600; font-size:11.5px;
+    font-family:var(--font-body); cursor:pointer; text-align:center;
+  }
+  .mode-btn.active{ background:rgba(62,214,196,0.14); border-color:var(--accent-teal); color:var(--accent-teal); }
+  .mode-btn:active{ opacity:0.8; }
+
   .btn-primary{
     display:block; width:100%; padding:14px; border-radius:12px; border:none;
     background:linear-gradient(135deg, var(--accent-teal), var(--accent-teal-dim));
@@ -356,6 +367,12 @@
       <div class="trust-badge neutral" id="trustBadge">—</div>
       <div class="bearing-rel" id="bearingRel"></div>
     </div>
+  </div>
+
+  <div class="mode-toggle" id="modeToggle">
+    <button class="mode-btn active" data-mode="auto">Auto</button>
+    <button class="mode-btn" data-mode="track">✈ Flight</button>
+    <button class="mode-btn" data-mode="compass">Ground</button>
   </div>
 
   <div class="compass-hint" id="compassHint">
@@ -801,6 +818,15 @@ let isRamadan = false; // set from the Hijri month in refreshPrayerUI
 //   'static'  — north-up dial, no live rotation (no sensor, not moving)
 let dialMode = 'static';
 let currentQibla = null;
+
+// Manual override for the automatic track/compass detection above. The auto
+// heuristic needs several consecutive fast, accurate GPS fixes to trust
+// GPS track — if reception is weak mid-cabin at cruise it can stay stuck on
+// the magnetometer (unreliable inside a metal fuselage) the whole flight even
+// though you're clearly moving. Forcing 'track' skips that detection and
+// trusts whatever heading GPS reports, however marginal; forcing 'compass'
+// does the reverse for testing on the ground without GPS movement noise.
+let modeOverride = 'auto'; // 'auto' | 'track' | 'compass'
 let lastFixWasMoving = false;
 let deviceHeading = null;   // smoothed compass heading, deg clockwise from MAGNETIC north
 let orientationOn = false;
@@ -1069,7 +1095,11 @@ function handlePositionSuccess(pos){
     if(looksMoving){ movingStreak++; slowStreak = 0; } else { slowStreak++; movingStreak = 0; }
     if(!trackActive && movingStreak >= 3) trackActive = true;
     else if(trackActive && slowStreak >= 2) trackActive = false;
-    lastFixWasMoving = trackActive;
+
+    // Manual override wins over the auto heuristic above (which keeps running
+    // in the background regardless, so switching back to Auto picks up cleanly).
+    const useTrack = modeOverride === 'track' ? true : modeOverride === 'compass' ? false : trackActive;
+    lastFixWasMoving = useTrack;
 
     const accTxt = acc > 5000 ? `±${(acc/1000).toFixed(0)}km · weak signal, approximate`
                  : acc > 500  ? `±${acc}m · weak GPS`
@@ -1079,7 +1109,7 @@ function handlePositionSuccess(pos){
     // compass to true north; GPS ground-track is already true north).
     magneticDeclination = geomagDeclination(lat, lon, (pos.coords.altitude||0)/1000, decimalYearNow());
 
-    if(trackActive){
+    if(useTrack){
       // Flight/drive mode: the GPS fix drives the dial to the direction of travel.
       // Skip redrawing on a fix with no heading (e.g. momentarily decelerating) so
       // the needle holds its last track angle instead of snapping to north-up.
@@ -1087,16 +1117,20 @@ function handlePositionSuccess(pos){
       if(Number.isFinite(heading)){
         updateNeedle(heading, qBearing);
         bearingRel.textContent = 'Qibla: ' + describeRelative(qBearing, heading);
+      }else if(modeOverride === 'track'){
+        bearingRel.textContent = 'Flight mode forced — waiting for a GPS heading';
       }
       const spTxt = (speed != null && speed > 0) ? ` · ${Math.round(speed*3.6)} km/h` : '';
-      setStatus('locked', `GPS locked · ${accTxt}${spTxt}`);
+      const forcedTxt = modeOverride === 'track' ? ' · forced' : '';
+      setStatus('locked', `GPS locked · ${accTxt}${spTxt}${forcedTxt}`);
     }else{
       // On the ground: DON'T drive the needle from the GPS fix — that would jump
       // once per fix. The compass sensor drives it smoothly in handleOrientation.
       const compassAlive = (performance.now() - lastOrientationAt) < 2500;
+      const forcedTxt = modeOverride === 'compass' ? ' · forced' : '';
       if(compassAlive){
         setDialMode('compass');
-        setStatus('locked', `GPS locked · ${accTxt} · compass`);
+        setStatus('locked', `GPS locked · ${accTxt} · compass${forcedTxt}`);
       }else{
         // No compass sensor responding: stable north-up dial, needle = true Qibla.
         setDialMode('static');
@@ -1140,6 +1174,16 @@ document.getElementById('locateBtn').addEventListener('click', ()=>{
   setStatus('searching','Searching for GPS lock…');
   deniedRetried = false;
   startWatch();
+});
+
+// Manual Auto/Flight/Ground override — see the modeOverride comment above.
+document.querySelectorAll('#modeToggle .mode-btn').forEach(btn=>{
+  btn.addEventListener('click', ()=>{
+    modeOverride = btn.dataset.mode;
+    document.querySelectorAll('#modeToggle .mode-btn').forEach(b=>b.classList.toggle('active', b === btn));
+    dialMode = null; // clear so setDialMode reapplies the hint/badge even if the resolved mode is unchanged
+    if(currentPos) handlePositionSuccess({ coords: currentPos }); // re-render immediately with the new override
+  });
 });
 
 // Direction source priority: GPS ground track (moving, true north) beats the
