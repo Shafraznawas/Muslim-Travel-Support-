@@ -1,0 +1,140 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+<title>Step 1: Person Detector</title>
+<style>
+  html, body {
+    margin: 0;
+    padding: 0;
+    background: #000;
+    height: 100%;
+    overflow: hidden;
+    font-family: -apple-system, Roboto, Arial, sans-serif;
+  }
+  #wrap {
+    position: relative;
+    width: 100vw;
+    height: 100vh;
+  }
+  video, canvas {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+  }
+  #status {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    z-index: 10;
+    text-align: center;
+    padding: 14px 10px;
+    background: linear-gradient(to bottom, rgba(0,0,0,0.75), transparent);
+    color: #fff;
+    font-size: 18px;
+    font-weight: 600;
+  }
+  #sub {
+    font-size: 13px;
+    font-weight: 400;
+    opacity: 0.85;
+    margin-top: 4px;
+  }
+  #startBtn {
+    position: absolute;
+    z-index: 20;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    padding: 16px 28px;
+    font-size: 18px;
+    border-radius: 12px;
+    border: none;
+    background: #22c55e;
+    color: #fff;
+    font-weight: 700;
+  }
+</style>
+</head>
+<body>
+<div id="wrap">
+  <div id="status">Starting camera…<div id="sub">This page never sends your video anywhere — everything runs on your phone.</div></div>
+  <video id="video" autoplay playsinline muted></video>
+  <canvas id="canvas"></canvas>
+  <button id="startBtn">Tap to Start Camera</button>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.20.0/dist/tf.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/coco-ssd@2.2.3/dist/coco-ssd.min.js"></script>
+<script>
+const video = document.getElementById('video');
+const canvas = document.getElementById('canvas');
+const ctx = canvas.getContext('2d');
+const status = document.getElementById('status');
+const sub = document.getElementById('sub');
+const startBtn = document.getElementById('startBtn');
+
+async function start() {
+  startBtn.style.display = 'none';
+  status.firstChild.textContent = 'Asking for camera permission…';
+
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({
+      video: { facingMode: { ideal: 'environment' } },
+      audio: false
+    });
+    video.srcObject = stream;
+    await new Promise(r => video.onloadedmetadata = r);
+    video.play();
+  } catch (err) {
+    status.firstChild.textContent = 'Could not access camera.';
+    sub.textContent = err.message + ' — check your browser allows camera access for this page.';
+    return;
+  }
+
+  canvas.width = video.videoWidth;
+  canvas.height = video.videoHeight;
+
+  status.firstChild.textContent = 'Loading the "spot a person" skill…';
+  const model = await cocoSsd.load();
+  status.firstChild.textContent = 'Watching…';
+  sub.textContent = '0 person(s) detected';
+
+  async function detectLoop() {
+    const predictions = await model.detect(video);
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+    const people = predictions.filter(p => p.class === 'person' && p.score > 0.55);
+
+    for (const p of people) {
+      const [x, y, w, h] = p.bbox;
+      ctx.strokeStyle = '#22c55e';
+      ctx.lineWidth = 4;
+      ctx.strokeRect(x, y, w, h);
+      ctx.fillStyle = '#22c55e';
+      ctx.font = '20px sans-serif';
+      const label = `Person ${(p.score * 100).toFixed(0)}%`;
+      const textWidth = ctx.measureText(label).width;
+      ctx.fillRect(x, y - 26, textWidth + 12, 26);
+      ctx.fillStyle = '#000';
+      ctx.fillText(label, x + 6, y - 7);
+    }
+
+    sub.textContent = people.length === 0
+      ? '0 person(s) detected'
+      : `${people.length} person(s) detected 🧍`;
+
+    requestAnimationFrame(detectLoop);
+  }
+  detectLoop();
+}
+
+startBtn.addEventListener('click', start);
+</script>
+</body>
+</html>
